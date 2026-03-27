@@ -1,0 +1,22 @@
+World:
+  child:
+  - afghanistan
+  - china
+  - india
+  - indus
+  - pakistan
+afghanistan:
+  child:
+  - AFG
+china:
+  child:
+  - CHN
+india:
+  child:
+  - IND
+indus:
+  child:
+  - INDUS
+pakistan:
+  child:
+  - PAK
