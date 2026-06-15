@@ -1,22 +1,153 @@
+# Basin code list
+#
+# This structure is used in the nexus module where IRB basins
+# are intersected with the Indus River Basin regions.
+# Format mirrors R11.yaml: World → regions → basin nodes.
+
 World:
-  child:
-  - afghanistan
-  - china
-  - india
-  - indus
-  - pakistan
-afghanistan:
-  child:
-  - AFG
-china:
-  child:
-  - CHN
-india:
-  child:
-  - IND
-indus:
-  child:
-  - INDUS
-pakistan:
-  child:
-  - PAK
+  name: World
+  description: IRB basin regions
+
+AFGHAN_SOUTH:
+  parent: World
+  name: Afghanistan South
+
+AFGHAN_NORTH:
+  parent: World
+  name: Afghanistan North
+
+CHINA:
+  parent: World
+  name: China
+
+INDIA_EAST:
+  parent: World
+  name: India East
+
+INDIA_WEST:
+  parent: World
+  name: India West
+
+R12_PAK:
+  parent: World
+  name: Pakistan
+
+"1|AFGHAN_SOUTH":
+  parent: AFGHAN_SOUTH
+  name: Basin 1 Afghanistan South
+  area: '18426.835033256226'
+
+"2|AFGHAN_NORTH":
+  parent: AFGHAN_NORTH
+  name: Basin 2 Afghanistan North
+  area: '53733.505222172884'
+
+"3|CHINA":
+  parent: CHINA
+  name: Basin 3 China
+  area: '33278.864256979155'
+
+"4|CHINA":
+  parent: CHINA
+  name: Basin 4 China
+  area: '36517.3541079196'
+
+"5|CHINA":
+  parent: CHINA
+  name: Basin 5 China
+  area: '26029.354791965747'
+
+"6|INDIA_WEST":
+  parent: INDIA_WEST
+  name: Basin 6 India West
+  area: '14077.397996818845'
+
+"7|INDIA_WEST":
+  parent: INDIA_WEST
+  name: Basin 7 India West
+  area: '18049.040777598726'
+
+"8|INDIA_WEST":
+  parent: INDIA_WEST
+  name: Basin 8 India West
+  area: '29009.286026175687'
+
+"9|INDIA_EAST":
+  parent: INDIA_EAST
+  name: Basin 9 India East
+  area: '63280.728267599734'
+
+"10|INDIA_WEST":
+  parent: INDIA_WEST
+  name: Basin 10 India West
+  area: '20816.393545654886'
+
+"11|INDIA_WEST":
+  parent: INDIA_WEST
+  name: Basin 11 India West
+  area: '40475.10457525003'
+
+"12|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 12 Pakistan
+  area: '24335.88698824826'
+
+"13|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 13 Pakistan
+  area: '31868.902975934812'
+
+"14|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 14 Pakistan
+  area: '16506.048894742882'
+
+"15|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 15 Pakistan
+  area: '28266.783560795684'
+
+"16|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 16 Pakistan
+  area: '32370.978619144502'
+
+"17|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 17 Pakistan
+  area: '17110.344661473082'
+
+"18|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 18 Pakistan
+  area: '33083.81052811144'
+
+"19|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 19 Pakistan
+  area: '97930.01306156584'
+
+"20|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 20 Pakistan
+  area: '107338.78121731617'
+
+"21|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 21 Pakistan
+  area: '39044.150475231574'
+
+"22|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 22 Pakistan
+  area: '69242.18546571574'
+
+"23|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 23 Pakistan
+  area: '9277.309838775063'
+
+"24|PAKISTAN":
+  parent: R12_PAK
+  name: Basin 24 Pakistan
+  area: '6434.031457191473'
