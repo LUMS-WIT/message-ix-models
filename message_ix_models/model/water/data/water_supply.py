@@ -1066,6 +1066,7 @@ def add_e_flow(context: "Context") -> dict[str, pd.DataFrame]:
         df_env.sort_values(["Region", "years", "value"], inplace=True)
         df_env.fillna(0, inplace=True)
         df_env.reset_index(drop=True, inplace=True)
+        df_env = df_env[df_env["years"] != "basin_id"]
         df_env["year"] = pd.DatetimeIndex(df_env["years"]).year
         df_env["time"] = "year"
         df_env["Region"] = df_env["Region"].map(df_x["BCU_name"])

@@ -250,7 +250,7 @@ def add_sectoral_demands(context: "Context") -> dict[str, pd.DataFrame]:
 
     # Filter to only include basins that exist after basin filtering
     df_dmds = df_dmds[df_dmds["node"].isin(context.valid_basins)]
-
+    df_dmds = df_dmds.fillna(0)
     # Write final interpolated values as csv
     # df2_f.to_csv('final_interpolated_values.csv')
 
