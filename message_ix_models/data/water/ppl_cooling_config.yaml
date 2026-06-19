@@ -45,6 +45,20 @@ excluded_cooling_techs:
   - mw_ppl
   - nuc_fbr
   - nuc_htemp
+  - bio_ppl
+
+# Technologies to exclude from non-cooling water linkage.
+excluded_non_cooling_techs:
+  - ref_hil
+  - ref_lol
+  - gas_extr_1
+  - gas_extr_2
+  - gas_extr_3
+  - gas_extr_4
+  - gas_extr_5
+  - gas_extr_6
+  - gas_extr_7
+  - gas_extr_8
 
 # Unit conversion: m3/GJ to MCM/GWa
 # 1 GWa = 31.536e6 GJ, 1 MCM = 1e6 m3

@@ -333,11 +333,35 @@ def _make_capacity_factor(inp: pd.DataFrame, context: "Context") -> pd.DataFrame
         return cap_fact
 
     # Apply climate impacts on freshwater cooling
-    impact_path = package_data_path(
+    # impact_path = package_data_path(
+    #     "water",
+    #     "ppl_cooling_tech",
+    #     f"power_plant_cooling_impact_MESSAGE_{context.regions}_{context.RCP}.csv",
+    # )
+    #from pathlib import Path
+
+    #base_dir = Path(package_data_path("water", "ppl_cooling_tech"))
+
+    file_rcp = package_data_path(
         "water",
         "ppl_cooling_tech",
         f"power_plant_cooling_impact_MESSAGE_{context.regions}_{context.RCP}.csv",
     )
+    file_region = package_data_path(
+        "water",
+        "ppl_cooling_tech",
+        f"power_plant_cooling_impact_MESSAGE_{context.regions}.csv",
+    )
+
+    if file_rcp.exists():
+        impact_path = file_rcp
+    elif file_region.exists():
+        impact_path = file_region
+        print("Impact_path:", impact_path)
+    else:
+        raise FileNotFoundError("No cooling impact file found")
+
+
     df_impact = pd.read_csv(impact_path)
 
     for node in df_impact["node"]:

@@ -265,7 +265,7 @@ def get_spec(context: Context) -> Mapping[str, ScenarioInfo]:
     context : .Context
         The key ``regions`` determines the regional aggregation used.
     """
-
+    #print(">>> GET_SPEC CALLED <<<")
     context = read_config()
 
     require = ScenarioInfo()
@@ -304,10 +304,13 @@ def get_spec(context: Context) -> Mapping[str, ScenarioInfo]:
             # Elements to add
             add.set[set_name].extend(config.get("add", []))
 
-        # The set of required nodes varies according to context.regions
+        #The set of required nodes varies according to context.regions
         n_codes = get_codes(f"node/{context.regions}")
         nodes = list(map(str, n_codes[n_codes.index(Code(id="World"))].child))
         require.set["node"].extend(nodes)
+
+
+      
 
         # Share commodity for groundwater
         results = {}
@@ -506,13 +509,15 @@ def get_spec(context: Context) -> Mapping[str, ScenarioInfo]:
     # clean the remove.set from things that are actually not in the scenario
     # this saves building time significantly, as remove is slow
     scen = context.get_scenario()
+    #savailable_techs = set(scen.set("technology"))
     for category, elements in ((k, v) for k, v in remove.set.items() if k != "unit"):
         # Get the corresponding set from the scenario
         scen_set = scen.set(category)
 
         # Filter elements to keep only those present in the scenario set
         remove.set[category] = [elem for elem in elements if elem in scen_set.values]
-
+        
+   
     return dict(require=require, remove=remove, add=add)
 
 
@@ -562,6 +567,8 @@ def map_basin(context: Context) -> Mapping[str, ScenarioInfo]:
 
     # Assigning proper nomenclature
     df["node"] = "B" + df["BCU_name"].astype(str)
+    
+   # df["node"] = "B" + df["BCU_name"].astype(str) + "|" + df["REGION"].astype(str)
     df["mode"] = "M" + df["BCU_name"].astype(str)
     df["region"] = (
         context.map_ISO_c[context.regions]
@@ -572,6 +579,7 @@ def map_basin(context: Context) -> Mapping[str, ScenarioInfo]:
     results["node"] = df["node"]
     results["mode"] = df["mode"]
     # map nodes as per dimensions
+    
     df1 = pd.DataFrame({"node_parent": df["region"], "node": df["node"]})
     df2 = pd.DataFrame({"node_parent": df["node"], "node": df["node"]})
     frame = [df1, df2]
@@ -588,6 +596,7 @@ def map_basin(context: Context) -> Mapping[str, ScenarioInfo]:
         # Sets to add
         add.set[set_name].extend(config)
 
+   
     return dict(require=require, remove=remove, add=add)
 
 
@@ -607,13 +616,40 @@ def main(context: Context, scenario, **options):
     if context.nexus_set == "nexus":
         # Add water balance
         spec = map_basin(context)
-
+        #print(spec["add"]["set"]["node"])
+        #print(spec["add"].set["node"])
         # Apply the structural changes AND add the data
+       
+
         build.apply_spec(scenario, spec, **options)
 
     # Core water structure
     spec1 = get_spec(context)
+    # print(
+    #     "bio_hpl__ot_fresh in technology:",
+    #     "bio_hpl__ot_fresh" in spec1["add"].set["technology"]
+    # )
 
+    valid_techs = set(str(x) for x in scenario.set("technology"))
+
+    missing = []
+
+    for row in spec1["add"].set["map_tec_addon"]:
+        if row[0] not in valid_techs:
+            missing.append(row[0])
+
+    print("Missing technologies in Pakistan baseline scenario:", sorted(set(missing)))
+
+    #valid_techs = set(str(x) for x in scenario.set("technology"))
+
+    if "map_tec_addon" in spec1["add"].set:
+        spec1["add"].set["map_tec_addon"] = [
+            row
+            for row in spec1["add"].set["map_tec_addon"]
+            if row[0] in valid_techs
+        ]
+
+    
     # Apply the structural changes AND add the data
     build.apply_spec(scenario, spec1, partial(add_data, context=context), **options)
 
