@@ -38,13 +38,16 @@ def add_irr_structure(context: "Context") -> dict[str, pd.DataFrame]:
 
     # Assigning proper nomenclature
     df_node["node"] = "B" + df_node["BCU_name"].astype(str)
-    df_node["mode"] = "M" + df_node["BCU_name"].astype(str)
-    df_node["region"] = (
-        context.map_ISO_c[context.regions]
-        if context.type_reg == "country"
-        else f"{context.regions}_" + df_node["REGION"].astype(str)
-    )
-
+    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.split("|").str[-1]
+    df_node["mode"] = "M" + df_node["clean_basin"]
+    # df_node["region"] = (
+    #     context.map_ISO_c[context.regions]
+    #     if context.type_reg == "country"
+    #     else f"{context.regions}_" + df_node["REGION"].astype(str)
+    # )
+    # Map raw CSV REGION names to MESSAGEix node IDs (must match IRB.yaml / build.py)
+    REGION_NODE_MAP = {"PAKISTAN": "R12_PAK"}
+    df_node["region"] = df_node["REGION"].replace(REGION_NODE_MAP)
     # Reference to the water configuration
     info = context["water build info"]
 

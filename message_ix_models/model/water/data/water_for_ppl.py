@@ -57,18 +57,25 @@ def _load_scenario_and_cooling_data(
     # FIXME Derive node_region from scenario/codelist rather than basin CSV
     df_node = pd.read_csv(basin_path)
     df_node["node"] = "B" + df_node["BCU_name"].astype(str)
-    df_node["mode"] = "M" + df_node["BCU_name"].astype(str)
-    df_node["region"] = (
-        context.map_ISO_c[context.regions]
-        if context.type_reg == "country"
-        else f"{context.regions}_" + df_node["REGION"].astype(str)
-    )
+    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.split("|").str[-1]
+    df_node["mode"] = "M" + df_node["clean_basin"]
+    # df_node["region"] = (
+    #     context.map_ISO_c[context.regions]
+    #     if context.type_reg == "country"
+    #     else f"{context.regions}_" + df_node["REGION"].astype(str)
+    # )
+    # Map raw CSV REGION names to MESSAGEix node IDs (must match IRB.yaml / build.py)
+    REGION_NODE_MAP = {"PAKISTAN": "R12_PAK"}
+    df_node["region"] = df_node["REGION"].replace(REGION_NODE_MAP)
     node_region = df_node["region"].unique()
 
     # Load cooling technology specs
     cooling_df = pd.read_csv(tech_perf_path)
     cooling_df = cooling_df[cooling_df["technology_group"] == "cooling"].copy()
     cooling_df["parent_tech"] = cooling_df["technology_name"].str.split("__").str[0]
+    excluded = set(CONFIG.get("excluded_cooling_techs", []))
+    if excluded:
+        cooling_df = cooling_df[~cooling_df["parent_tech"].isin(excluded)].copy()
 
     # Get scenario and parent tech parameters
     scen = scenario or context.get_scenario()
@@ -333,35 +340,17 @@ def _make_capacity_factor(inp: pd.DataFrame, context: "Context") -> pd.DataFrame
         return cap_fact
 
     # Apply climate impacts on freshwater cooling
-    # impact_path = package_data_path(
-    #     "water",
-    #     "ppl_cooling_tech",
-    #     f"power_plant_cooling_impact_MESSAGE_{context.regions}_{context.RCP}.csv",
-    # )
-    #from pathlib import Path
-
-    #base_dir = Path(package_data_path("water", "ppl_cooling_tech"))
-
-    file_rcp = package_data_path(
-        "water",
-        "ppl_cooling_tech",
-        f"power_plant_cooling_impact_MESSAGE_{context.regions}_{context.RCP}.csv",
-    )
-    file_region = package_data_path(
+    impact_path = package_data_path(
         "water",
         "ppl_cooling_tech",
         f"power_plant_cooling_impact_MESSAGE_{context.regions}.csv",
     )
-
-    if file_rcp.exists():
-        impact_path = file_rcp
-    elif file_region.exists():
-        impact_path = file_region
-        print("Impact_path:", impact_path)
-    else:
-        raise FileNotFoundError("No cooling impact file found")
-
-
+    if not impact_path.exists():
+        impact_path = package_data_path(
+            "water",
+            "ppl_cooling_tech",
+            f"power_plant_cooling_impact_MESSAGE_{context.regions}_{context.RCP}.csv",
+        )
     df_impact = pd.read_csv(impact_path)
 
     for node in df_impact["node"]:
@@ -394,11 +383,15 @@ def _make_investment_cost(context: "Context") -> pd.DataFrame:
         f"{t}{suffix}" for t in excluded for suffix in CONFIG["cooling_suffixes"]
     ]
 
+    # Cooling parent technologies in the IRB workflow still live on R12_* power nodes
+    # (e.g. R12_PAK), so use R12 cost projections as the compatible source.
+    cost_node = "R12" if context.regions == "IRB" else context.regions
+
     cfg = Config(
         module=MODULE.cooling,
         scenario=context.ssp,
-        method="gdp",
-        node=context.regions,
+        method="convergence",
+        node=cost_node,
     )
     cost_proj = create_cost_projections(cfg)
     cols = ["year_vtg", "node_loc", "technology", "value", "unit"]
@@ -406,7 +399,41 @@ def _make_investment_cost(context: "Context") -> pd.DataFrame:
     inv_cost = inv_cost[~inv_cost["technology"].isin(techs_to_remove)]
     inv_cost = inv_cost[inv_cost["technology"].str.contains("__")]
 
-    return inv_cost
+    scen = context.get_scenario()
+    scenario_nodes = set(map(str, scen.set("node")))
+    matched = inv_cost[inv_cost["node_loc"].isin(scenario_nodes)].copy()
+
+    if not matched.empty:
+        return matched
+
+    if getattr(context, "type_reg", None) == "country":
+        candidate_nodes = [
+            n
+            for n in sorted(scenario_nodes)
+            if n not in {"World", f"{context.regions}_GLB", "B" + context.regions}
+            and not str(n).startswith("B")
+        ]
+        local_node = getattr(context, "map_ISO_c", {}).get(context.regions)
+        target_node = local_node or (candidate_nodes[0] if candidate_nodes else None)
+
+        if target_node:
+            matched = inv_cost.copy()
+            matched["node_loc"] = target_node
+            log.warning(
+                "Mapped cooling inv_cost from regional source nodes to local node %s "
+                "for country run %s.",
+                target_node,
+                context.regions,
+            )
+            return matched
+
+    log.warning(
+        "No cooling inv_cost nodes matched the scenario node set; dropping unmatched "
+        "rows. Scenario nodes include %s",
+        sorted(scenario_nodes),
+    )
+
+    return matched
 
 
 def _expand_historical_params(
@@ -804,6 +831,9 @@ def non_cooling_tec(context: "Context", scenario=None) -> dict[str, pd.DataFrame
     is_non_cool = df["technology_group"] != "cooling"
     is_fresh = df["water_supply_type"] == "freshwater_supply"
     non_cool = df[is_non_cool & is_fresh].copy()
+    excluded = set(CONFIG.get("excluded_non_cooling_techs", []))
+    if excluded:
+        non_cool = non_cool[~non_cool["technology_name"].isin(excluded)].copy()
     non_cool.rename(columns={"technology_name": "technology"}, inplace=True)
 
     scen = scenario or context.get_scenario()

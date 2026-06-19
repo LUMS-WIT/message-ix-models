@@ -59,9 +59,11 @@ def water_ini(context: "Context", regions, time):
     else:
         log.info("Use default --regions=R12")
         regions = "R12"
-    # add an attribute to distinguish country models
+    # Distinguish global, single-country, and custom basin aggregations.
     if regions in ["R11", "R12", "R14", "R32", "RCP"]:
         context.type_reg = "global"
+    elif regions == "IRB":
+        context.type_reg = "basin"
     else:
         context.type_reg = "country"
     context.regions = regions
@@ -69,12 +71,14 @@ def water_ini(context: "Context", regions, time):
     # create a mapping ISO code :
     # a region name, for other scripts
     # only needed for 1-country models
-    n_codes = get_codes(f"node/{context.regions}")
-    nodes = list(map(str, n_codes[n_codes.index(Code(id="World"))].child))
     if context.type_reg == "country":
+        n_codes = get_codes(f"node/{context.regions}")
+        nodes = list(map(str, n_codes[n_codes.index(Code(id="World"))].child))
         map_ISO_c = {context.regions: nodes[0]}
         context.map_ISO_c = map_ISO_c
         log.info(f"mapping {context.map_ISO_c[context.regions]}")
+    else:
+        context.map_ISO_c = getattr(context, "map_ISO_c", {})
 
     # deinfe the timestep
     if not time:
@@ -192,6 +196,13 @@ def nexus(context: "Context", regions, rcps, sdgs, rels, macro=False):
     REL: str
         Specifies the reliability of hydrological data ['low','mid','high']
     """
+    # Ensure programmatic use matches the CLI initialization path.
+    if (
+        getattr(context, "type_reg", None) not in {"global", "country", "basin"}
+        or context.regions != regions
+    ):
+        water_ini(context, regions, None)
+
     # add input information to the class context
     context.nexus_set = "nexus"
     if not context.regions:

@@ -52,11 +52,72 @@ DATA_FUNCTIONS_COUNTRY: list[DataFunc] = [
 ]
 
 
+def _sanitize_node_columns(
+    data: dict[str, pd.DataFrame], source: str
+) -> dict[str, pd.DataFrame]:
+    """Normalize and drop rows with unresolved node dimensions."""
+    result: dict[str, pd.DataFrame] = {}
+
+    for par_name, df in data.items():
+        if not hasattr(df, "columns"):
+            result[par_name] = df
+            continue
+
+        clean = df.copy()
+
+        if "node" in clean.columns and "node_share" in clean.columns:
+            missing_node = clean["node"].isna()
+            if clean["node"].dtype == "object":
+                missing_node |= clean["node"].astype(str).isin({"", "None", "nan"})
+            clean.loc[missing_node, "node"] = clean.loc[missing_node, "node_share"]
+
+        node_cols = [c for c in clean.columns if c == "node" or c.startswith("node_")]
+        if node_cols:
+            invalid = pd.Series(False, index=clean.index)
+
+            for col in node_cols:
+                invalid |= clean[col].isna()
+                if clean[col].dtype == "object":
+                    invalid |= clean[col].astype(str).isin({"", "None", "nan"})
+
+            if invalid.any():
+                sample_cols = node_cols + [
+                    c
+                    for c in (
+                        "technology",
+                        "commodity",
+                        "level",
+                        "mode",
+                        "shares",
+                        "year_vtg",
+                        "year_act",
+                        "value",
+                    )
+                    if c in clean.columns and c not in node_cols
+                ]
+                sample = clean.loc[invalid, sample_cols].head(3).to_dict("records")
+                log.warning(
+                    "Dropping %s row(s) with unresolved node labels in %s from %s(): %s",
+                    int(invalid.sum()),
+                    par_name,
+                    source,
+                    sample,
+                )
+                clean = clean.loc[~invalid].copy()
+
+        result[par_name] = clean
+
+    return result
+
+
 def add_data(scenario, context: "Context", dry_run=False):
     """Populate `scenario` with MESSAGEix-Nexus data."""
 
     info = ScenarioInfo(scenario)
     context["water build info"] = info
+
+    def map_tech(t):
+        return str(t).split("__")[0]
 
     data_funcs: list[DataFunc] = (
         [add_water_supply, cool_tech, non_cooling_tec]
@@ -67,8 +128,54 @@ def add_data(scenario, context: "Context", dry_run=False):
     )
 
     for func in data_funcs:
-        # Generate or load the data; add to the Scenario
         log.info(f"from {func.__name__}()")
-        add_par_data(scenario, func(context), dry_run=dry_run)
+        try:
+            data = func(context)
+        except Exception as e:
+            raise RuntimeError(
+                f"Water build failed in {func.__name__}() before add_par_data: "
+                f"{type(e).__name__}: {e}"
+            ) from e
+
+        # 🔥 FORCE mapping AFTER function output
+        def process_df(df):
+            if hasattr(df, "columns") and "technology" in df.columns:
+                df = df.copy()
+                df["technology"] = df["technology"].astype(str).apply(map_tech)
+            return df
+
+        if isinstance(data, dict):
+            data = {k: process_df(v) for k, v in data.items()}
+            data = _sanitize_node_columns(data, func.__name__)
+        else:
+            data = process_df(data)
+            data = _sanitize_node_columns({"_": data}, func.__name__)["_"]
+
+        # 🔥 FINAL SAFETY CHECK (PRINT DEBUG)
+        if isinstance(data, dict):
+            for k, df in data.items():
+                if hasattr(df, "columns") and "technology" in df.columns:
+                    if df["technology"].str.contains("__ot_").any():
+                        raise ValueError("❌ Unmapped technology still exists!")
+        else:
+            if hasattr(data, "columns") and "technology" in data.columns:
+                if data["technology"].str.contains("__ot_").any():
+                    raise ValueError("❌ Unmapped technology still exists!")
+
+        try:
+            add_par_data(scenario, data, dry_run=dry_run)
+        except Exception as e:
+            if isinstance(data, dict):
+                detail = {
+                    k: getattr(v, "shape", None)
+                    for k, v in data.items()
+                    if hasattr(v, "shape")
+                }
+            else:
+                detail = getattr(data, "shape", None)
+            raise RuntimeError(
+                f"Water add_par_data failed in {func.__name__}() with data shapes "
+                f"{detail}: {type(e).__name__}: {e}"
+            ) from e
 
     log.info("done")

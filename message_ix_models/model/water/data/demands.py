@@ -16,6 +16,21 @@ if TYPE_CHECKING:
     from message_ix_models import Context
 
 
+def _stack_or_empty(df: pd.DataFrame) -> pd.DataFrame:
+    """Return stacked data or an empty frame if no value columns remain."""
+    if df.empty or df.shape[1] == 0:
+        nlevels = getattr(df.index, "nlevels", 1)
+        cols = [f"level_{i}" for i in range(nlevels)] + ["level_value", 0]
+        return pd.DataFrame(columns=cols)
+    return df.stack().reset_index()
+
+
+def _keep_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only columns that can be parsed as datetimes."""
+    keep = pd.to_datetime(pd.Index(df.columns), errors="coerce").notna()
+    return df.loc[:, keep].copy()
+
+
 def get_basin_sizes(basin: pd.DataFrame, node: str) -> Sequence[pd.Series | Literal[0]]:
     """Returns the sizes of developing and developed basins for a given node"""
     temp = basin[basin["BCU_name"] == node]
@@ -186,15 +201,26 @@ def add_sectoral_demands(context: "Context") -> dict[str, pd.DataFrame]:
     sub_time = context.time
     path = package_data_path("water", "demands", "harmonized", region, ".")
     # make sure all of the csvs have format, otherwise it might not work
-    list_of_csvs = list(path.glob("ssp2_regional_*.csv"))
+    input_files = sorted(path.glob("ssp2_regional_*.csv")) + sorted(
+        path.glob("ssp2_regional_*.xlsx")
+    )
+    if not input_files:
+        raise FileNotFoundError(
+            f"No harmonized sectoral demand files found in {path} "
+            f"for region {region}; expected ssp2_regional_*.csv or .xlsx"
+        )
     # define names for variables
-    fns = [os.path.splitext(os.path.basename(x))[0] for x in list_of_csvs]
+    fns = [os.path.splitext(os.path.basename(x))[0] for x in input_files]
     fns = " ".join(fns).replace("ssp2_regional_", "").split()
     # dictionary for reading csv files
     d: dict[str, pd.DataFrame] = {}
 
     for i in range(len(fns)):
-        d[fns[i]] = pd.read_csv(list_of_csvs[i])
+        file = input_files[i]
+        if file.suffix.lower() == ".xlsx":
+            d[fns[i]] = pd.read_excel(file)
+        else:
+            d[fns[i]] = pd.read_csv(file)
 
     # d is a dictionary that have ist of dataframes read in this folder
     dfs = {}
@@ -213,7 +239,10 @@ def add_sectoral_demands(context: "Context") -> dict[str, pd.DataFrame]:
     df_f = df_x_c.to_dataframe("").unstack()
 
     # Format the dataframe to be compatible with message format
-    df_dmds = df_f.stack(future_stack=True).reset_index(level=0).reset_index()
+    if df_f.empty or df_f.shape[1] == 0:
+        df_dmds = pd.DataFrame(columns=["year", "node", "variable", "value"])
+    else:
+        df_dmds = df_f.stack(future_stack=True).reset_index(level=0).reset_index()
     df_dmds.columns = ["year", "node", "variable", "value"]
     df_dmds.sort_values(["year", "node", "variable", "value"], inplace=True)
 
@@ -789,7 +818,8 @@ def read_water_availability(context: "Context") -> Sequence[pd.DataFrame]:
         )
         # Read rcp 2.6 data
         df_sw = pd.read_csv(path1)
-        df_sw.drop(["Unnamed: 0"], axis=1, inplace=True)
+        df_sw.drop(["Unnamed: 0"], axis=1, inplace=True, errors="ignore")
+        df_sw = _keep_datetime_columns(df_sw)
 
         # Filter rows to valid basins using index positions from full list
         full_basin_df = pd.read_csv(PATH)
@@ -800,7 +830,7 @@ def read_water_availability(context: "Context") -> Sequence[pd.DataFrame]:
         df_sw.reset_index(drop=True, inplace=True)
 
         df_sw.index = df_x["BCU_name"].index
-        df_sw = df_sw.stack().reset_index()
+        df_sw = _stack_or_empty(df_sw)
         df_sw.columns = pd.Index(["Region", "years", "value"])
         df_sw.fillna(0, inplace=True)
         df_sw.reset_index(drop=True, inplace=True)
@@ -822,14 +852,15 @@ def read_water_availability(context: "Context") -> Sequence[pd.DataFrame]:
 
         # Read groundwater data
         df_gw = pd.read_csv(path1)
-        df_gw.drop(["Unnamed: 0"], axis=1, inplace=True)
+        df_gw.drop(["Unnamed: 0"], axis=1, inplace=True, errors="ignore")
+        df_gw = _keep_datetime_columns(df_gw)
 
         # Filter to only include valid basins (same as df_sw)
         df_gw = df_gw.iloc[valid_indices]  # Use same valid_indices from above
         df_gw.reset_index(drop=True, inplace=True)
 
         df_gw.index = df_x["BCU_name"].index
-        df_gw = df_gw.stack().reset_index()
+        df_gw = _stack_or_empty(df_gw)
         df_gw.columns = pd.Index(["Region", "years", "value"])
         df_gw.fillna(0, inplace=True)
         df_gw.reset_index(drop=True, inplace=True)
@@ -850,7 +881,8 @@ def read_water_availability(context: "Context") -> Sequence[pd.DataFrame]:
             f"qtot_5y_m_{context.RCP}_{context.REL}_{context.regions}.csv",
         )
         df_sw = pd.read_csv(path1)
-        df_sw.drop(["Unnamed: 0"], axis=1, inplace=True)
+        df_sw.drop(["Unnamed: 0"], axis=1, inplace=True, errors="ignore")
+        df_sw = _keep_datetime_columns(df_sw)
 
         # Filter rows to valid basins
         full_basin_df = pd.read_csv(PATH)
@@ -861,7 +893,7 @@ def read_water_availability(context: "Context") -> Sequence[pd.DataFrame]:
         df_sw.reset_index(drop=True, inplace=True)
 
         df_sw.index = df_x["BCU_name"].index
-        df_sw = df_sw.stack().reset_index()
+        df_sw = _stack_or_empty(df_sw)
         df_sw.columns = pd.Index(["Region", "years", "value"])
         df_sw.sort_values(["Region", "years", "value"], inplace=True)
         df_sw.fillna(0, inplace=True)
@@ -881,14 +913,15 @@ def read_water_availability(context: "Context") -> Sequence[pd.DataFrame]:
             f"qr_5y_m_{context.RCP}_{context.REL}_{context.regions}.csv",
         )
         df_gw = pd.read_csv(path1)
-        df_gw.drop(["Unnamed: 0"], axis=1, inplace=True)
+        df_gw.drop(["Unnamed: 0"], axis=1, inplace=True, errors="ignore")
+        df_gw = _keep_datetime_columns(df_gw)
 
         # Filter to only include valid basins (same as df_sw)
         df_gw = df_gw.iloc[valid_indices]  # Use same valid_indices from above
         df_gw.reset_index(drop=True, inplace=True)
 
         df_gw.index = df_x["BCU_name"].index
-        df_gw = df_gw.stack().reset_index()
+        df_gw = _stack_or_empty(df_gw)
         df_gw.columns = pd.Index(["Region", "years", "value"])
         df_gw.sort_values(["Region", "years", "value"], inplace=True)
         df_gw.fillna(0, inplace=True)

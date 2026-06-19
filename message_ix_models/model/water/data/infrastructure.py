@@ -1,6 +1,7 @@
 """Prepare data for adding techs related to water distribution,
 treatment in urban & rural"""
 
+import logging
 from collections import defaultdict
 from typing import Any
 
@@ -25,6 +26,8 @@ from message_ix_models.util import (
     same_time,
 )
 
+log = logging.getLogger(__name__)
+
 
 def is_dummy_technology(df_row) -> bool:
     """Check if a technology is a dummy (has zero investment, fix, and var costs).
@@ -44,6 +47,11 @@ def is_dummy_technology(df_row) -> bool:
         and df_row.get("fix_cost_mid", 0) == 0.0
         and df_row.get("var_cost_mid", 0) == 0.0
     )
+
+
+def _concat_grouped(result_dc: dict[str, list[pd.DataFrame]]) -> dict[str, pd.DataFrame]:
+    """Concatenate grouped frames, skipping empty frame lists."""
+    return {par_name: pd.concat(dfs) for par_name, dfs in result_dc.items() if dfs}
 
 
 def _make_dist_output(
@@ -297,12 +305,17 @@ def add_infrastructure_techs(context: "Context") -> dict[str, pd.DataFrame]:
 
     # Assigning proper nomenclature
     df_node["node"] = "B" + df_node["BCU_name"].astype(str)
-    df_node["mode"] = "M" + df_node["BCU_name"].astype(str)
-    df_node["region"] = (
-        context.map_ISO_c[context.regions]
-        if context.type_reg == "country"
-        else f"{context.regions}_" + df_node["REGION"].astype(str)
-    )
+    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.split("|").str[-1]
+    df_node["mode"] = "M" + df_node["clean_basin"]
+    # df_node["region"] = (
+    #     context.map_ISO_c[context.regions]
+    #     if context.type_reg == "country"
+    #     else f"{context.regions}_" + df_node["REGION"].astype(str)
+    # )
+    # Map raw CSV REGION names to MESSAGEix node IDs (must match IRB.yaml / build.py)
+    # Map raw CSV REGION names to MESSAGEix node IDs (must match IRB.yaml / build.py)
+    REGION_NODE_MAP = {"PAKISTAN": "R12_PAK"}
+    df_node["region"] = df_node["REGION"].replace(REGION_NODE_MAP)
 
     # Reading water distribution mapping from csv
     path = package_data_path("water", "infrastructure", "water_distribution.csv")
@@ -339,7 +352,7 @@ def add_infrastructure_techs(context: "Context") -> dict[str, pd.DataFrame]:
         df_elec=df_elec,
     )
 
-    results_new = {par_name: pd.concat(dfs) for par_name, dfs in result_dc.items()}
+    results_new = _concat_grouped(result_dc)
 
     inp_df = pd.concat([inp_df, results_new["input"]])
 
@@ -801,7 +814,10 @@ def add_desalination(context: "Context") -> dict[str, pd.DataFrame]:
     df_desal = pd.read_csv(path)
     df_hist = pd.read_csv(path2)
     df_proj = pd.read_csv(path3)
-    df_proj = df_proj[df_proj["rcp"] == f"{context.RCP}"]
+    if "rcp" in df_proj.columns:
+        df_proj = df_proj[df_proj["rcp"] == f"{context.RCP}"]
+    if "desal_km3_year" in df_proj.columns and "cap_km3_year" not in df_proj.columns:
+        df_proj = df_proj.rename(columns={"desal_km3_year": "cap_km3_year"})
     df_proj = df_proj[~(df_proj["year"] == 2065) & ~(df_proj["year"] == 2075)]
     df_proj.reset_index(inplace=True, drop=True)
     df_proj = df_proj[df_proj["year"].isin(info.Y)]
@@ -817,16 +833,42 @@ def add_desalination(context: "Context") -> dict[str, pd.DataFrame]:
 
     # Assigning proper nomenclature
     df_node["node"] = "B" + df_node["BCU_name"].astype(str)
-    df_node["mode"] = "M" + df_node["BCU_name"].astype(str)
+    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.split("|").str[-1]
+    df_node["mode"] = "M" + df_node["clean_basin"]
+    # Map raw CSV REGION names to MESSAGEix node IDs (must match IRB.yaml / build.py)
+    REGION_NODE_MAP = {"PAKISTAN": "R12_PAK"}
     df_node["region"] = (
         context.map_ISO_c[context.regions]
         if context.type_reg == "country"
-        else f"{context.regions}_" + df_node["REGION"].astype(str)
+        else df_node["REGION"].replace(REGION_NODE_MAP)
     )
 
     # Filter to basins that exist after filtering
     df_hist = df_hist[df_hist["BCU_name"].isin(context.valid_basins)]
     df_proj = df_proj[df_proj["BCU_name"].isin(context.valid_basins)]
+
+    required_hist_cols = {"BCU_name", "year", "tec_type", "cap_km3_year"}
+    if not required_hist_cols.issubset(df_hist.columns):
+        log.warning(
+            "Historical desalination file for %s has unexpected columns %s; "
+            "using zero historical capacity for membrane/distillation.",
+            context.regions,
+            list(df_hist.columns),
+        )
+        df_hist = (
+            pd.DataFrame({"BCU_name": df_node["BCU_name"].unique()})
+            .assign(key=1)
+            .merge(
+                pd.DataFrame(
+                    [(2010, "membrane"), (2010, "distillation"), (2015, "membrane"), (2015, "distillation")],
+                    columns=["year", "tec_type"],
+                ).assign(key=1),
+                on="key",
+                how="outer",
+            )
+            .drop(columns="key")
+        )
+        df_hist["cap_km3_year"] = 0.0
 
     # output dataframe linking to desal tech types
     out_df = (
@@ -1014,9 +1056,8 @@ def add_desalination(context: "Context") -> dict[str, pd.DataFrame]:
 
         result_dc["input"].append(inp)
 
-    results_new = {par_name: pd.concat(dfs) for par_name, dfs in result_dc.items()}
-
-    inp_df = results_new["input"]
+    results_new = _concat_grouped(result_dc)
+    inp_df = results_new.get("input", pd.DataFrame())
 
     # Adding input dataframe
     df_heat = df_desal[df_desal["heat_input_mid"] > 0]
@@ -1048,9 +1089,9 @@ def add_desalination(context: "Context") -> dict[str, pd.DataFrame]:
 
         result_dc["input"].append(inp)
 
-    results_new = {par_name: pd.concat(dfs) for par_name, dfs in result_dc.items()}
-
-    inp_df = pd.concat([inp_df, results_new["input"]])
+    results_new = _concat_grouped(result_dc)
+    if "input" in results_new:
+        inp_df = pd.concat([inp_df, results_new["input"]])
 
     # Adding input dataframe
     for index, rows in df_desal.iterrows():

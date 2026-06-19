@@ -22,6 +22,15 @@ from message_ix_models.util import (
 )
 
 
+def _stack_or_empty(df: pd.DataFrame) -> pd.DataFrame:
+    """Return stacked data or an empty frame if no value columns remain."""
+    if df.empty or df.shape[1] == 0:
+        nlevels = getattr(df.index, "nlevels", 1)
+        cols = [f"level_{i}" for i in range(nlevels)] + ["level_value", 0]
+        return pd.DataFrame(columns=cols)
+    return df.stack().reset_index()
+
+
 def map_basin_region_wat(context: "Context") -> pd.DataFrame:
     """
     Calculate share of water availability of basins per each parent region.
@@ -66,7 +75,7 @@ def map_basin_region_wat(context: "Context") -> pd.DataFrame:
         df_sw["MSGREG"] = (
             context.map_ISO_c[context.regions]
             if context.type_reg == "country"
-            else f"{context.regions}_" + df_sw["BCU_name"].str.split("|").str[-1]
+            else df_sw["BCU_name"].str.split("|").str[-1]
         )
 
         df_sw = df_sw.set_index(["MSGREG", "BCU_name"])
@@ -76,10 +85,13 @@ def map_basin_region_wat(context: "Context") -> pd.DataFrame:
         df_sw.reset_index(level=0, drop=True, inplace=True)
         df_sw.reset_index(inplace=True)
         df_sw["Region"] = "B" + df_sw["BCU_name"].astype(str)
-        df_sw["Mode"] = df_sw["Region"].replace(regex=["^B"], value="M")
+        df_sw["Mode"] = "M" + df_sw["BCU_name"].astype(str).str.split("|").str[-1]
         df_sw.drop(columns=["BCU_name"], inplace=True)
         df_sw.set_index(["MSGREG", "Region", "Mode"], inplace=True)
-        df_sw = df_sw.stack().reset_index(level=0).reset_index()
+        if df_sw.empty or df_sw.shape[1] == 0:
+            df_sw = pd.DataFrame(columns=["region", "mode", "date", "MSGREG", "share"])
+        else:
+            df_sw = df_sw.stack().reset_index(level=0).reset_index()
         df_sw.columns = pd.Index(["region", "mode", "date", "MSGREG", "share"])
         df_sw.sort_values(["region", "date", "MSGREG", "share"], inplace=True)
         df_sw["year"] = pd.DatetimeIndex(df_sw["date"]).year
@@ -112,12 +124,12 @@ def map_basin_region_wat(context: "Context") -> pd.DataFrame:
         df_sw = df_sw.iloc[valid_indices].reset_index(drop=True)
         df_sw["BCU_name"] = df_x["BCU_name"]
 
-        df_sw["MSGREG"] = (
-            context.map_ISO_c[context.regions]
-            if context.type_reg == "country"
-            else f"{context.regions}_" + df_sw["BCU_name"].str.split("|").str[-1]
-        )
-
+        #df_sw["MSGREG"] = (
+        #    context.map_ISO_c[context.regions]
+         #   if context.type_reg == "country"
+          #  else f"{context.regions}_" + df_sw["BCU_name"].str.split("|").str[-1]
+        #)
+        df_sw["MSGREG"] = df_sw["BCU_name"].str.split("|").str[-1]
         df_sw = df_sw.set_index(["MSGREG", "BCU_name"])
         df_sw.drop(columns="Unnamed: 0", inplace=True)
 
@@ -126,16 +138,24 @@ def map_basin_region_wat(context: "Context") -> pd.DataFrame:
         df_sw.reset_index(level=0, drop=True, inplace=True)
         df_sw.reset_index(inplace=True)
         df_sw["Region"] = "B" + df_sw["BCU_name"].astype(str)
-        df_sw["Mode"] = df_sw["Region"].replace(regex=["^B"], value="M")
+        df_sw["Mode"] = "M" + df_sw["BCU_name"].astype(str).str.split("|").str[-1]
         df_sw.drop(columns=["BCU_name"], inplace=True)
         df_sw.set_index(["MSGREG", "Region", "Mode"], inplace=True)
-        df_sw = df_sw.stack().reset_index(level=0).reset_index()
+        if df_sw.empty or df_sw.shape[1] == 0:
+            df_sw = pd.DataFrame(columns=["node", "mode", "date", "MSGREG", "share"])
+        else:
+            df_sw = df_sw.stack().reset_index(level=0).reset_index()
         df_sw.columns = pd.Index(["node", "mode", "date", "MSGREG", "share"])
         df_sw.sort_values(["node", "date", "MSGREG", "share"], inplace=True)
         df_sw["year"] = pd.DatetimeIndex(df_sw["date"]).year
         df_sw["time"] = pd.DatetimeIndex(df_sw["date"]).month
         df_sw = df_sw[df_sw["year"].isin(info.Y)]
         df_sw.reset_index(drop=True, inplace=True)
+
+    # Map raw region names extracted from BCU_name to MESSAGEix node IDs.
+    # MSGREG is used as node_share in share_mode_up — must be a valid node.
+    REGION_NODE_MAP = {"PAKISTAN": "R12_PAK"}
+    df_sw["MSGREG"] = df_sw["MSGREG"].replace(REGION_NODE_MAP)
 
     return df_sw
 
@@ -185,12 +205,16 @@ def add_water_supply(context: "Context") -> dict[str, pd.DataFrame]:
 
     # Assigning proper nomenclature
     df_node["node"] = "B" + df_node["BCU_name"].astype(str)
-    df_node["mode"] = "M" + df_node["BCU_name"].astype(str)
-    df_node["region"] = (
-        context.map_ISO_c[context.regions]
-        if context.type_reg == "country"
-        else f"{context.regions}_" + df_node["REGION"].astype(str)
-    )
+    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.split("|").str[-1]
+    df_node["mode"] = "M" + df_node["clean_basin"]
+    # df_node["region"] = (
+    #     context.map_ISO_c[context.regions]
+    #     if context.type_reg == "country"
+    #     else f"{context.regions}_" + df_node["REGION"].astype(str)
+    # )
+    # Map raw CSV REGION names to MESSAGEix node IDs (must match IRB.yaml / build.py)
+    REGION_NODE_MAP = {"PAKISTAN": "R12_PAK"}
+    df_node["region"] = df_node["REGION"].replace(REGION_NODE_MAP)
 
     # Storing the energy MESSAGE region names
     node_region = df_node["region"].unique()
@@ -202,7 +226,7 @@ def add_water_supply(context: "Context") -> dict[str, pd.DataFrame]:
     df_gwt["region"] = (
         context.map_ISO_c[context.regions]
         if context.type_reg == "country"
-        else f"{context.regions}_" + df_gwt["REGION"].astype(str)
+        else df_gwt["REGION"].astype(str)
     )
 
     # reading groundwater energy intensity data
@@ -1034,10 +1058,10 @@ def add_e_flow(context: "Context") -> dict[str, pd.DataFrame]:
             f"e-flow_{context.RCP}_{context.regions}.csv",
         )
         df_env = pd.read_csv(path1)
-        df_env.drop(["Unnamed: 0"], axis=1, inplace=True)
+        df_env.drop(["Unnamed: 0"], axis=1, inplace=True, errors="ignore")
         df_env = df_env.iloc[valid_indices].reset_index(drop=True)
         df_env.index = df_x["BCU_name"].index
-        df_env = df_env.stack().reset_index()
+        df_env = _stack_or_empty(df_env)
         df_env.columns = pd.Index(["Region", "years", "value"])
         df_env.sort_values(["Region", "years", "value"], inplace=True)
         df_env.fillna(0, inplace=True)
@@ -1057,10 +1081,10 @@ def add_e_flow(context: "Context") -> dict[str, pd.DataFrame]:
             f"e-flow_5y_m_{context.RCP}_{context.regions}.csv",
         )
         df_env = pd.read_csv(path1)
-        df_env.drop(["Unnamed: 0"], axis=1, inplace=True)
+        df_env.drop(["Unnamed: 0"], axis=1, inplace=True, errors="ignore")
         df_env = df_env.iloc[valid_indices].reset_index(drop=True)
         df_env.index = df_x["BCU_name"].index
-        df_env = df_env.stack().reset_index()
+        df_env = _stack_or_empty(df_env)
         df_env.columns = pd.Index(["Region", "years", "value"])
         df_env.sort_values(["Region", "years", "value"], inplace=True)
         df_env.fillna(0, inplace=True)

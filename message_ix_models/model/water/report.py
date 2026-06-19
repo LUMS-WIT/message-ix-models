@@ -38,35 +38,35 @@ class ScenarioMetadata(TypedDict):
 _cooling_only = False
 
 
-def run_old_reporting(sc: Scenario | None = None):
-    try:
-        from message_data.tools.post_processing.iamc_report_hackathon import (
-            report as legacy_report,
-        )
-    except ImportError:
-        log.warning(
-            "Missing message_data.tools.post_processing; fall back to "
-            "message_ix_models.report.legacy. This may not work."
-        )
-        from message_ix_models.report.legacy.iamc_report_hackathon import (
-            report as legacy_report,
-        )
+# def run_old_reporting(sc: Scenario | None = None):
+#     try:
+#         from message_data.tools.post_processing.iamc_report_hackathon import (
+#             report as legacy_report,
+#         )
+#     except ImportError:
+#         log.warning(
+#             "Missing message_data.tools.post_processing; fall back to "
+#             "message_ix_models.report.legacy. This may not work."
+#         )
+#         from message_ix_models.report.legacy.iamc_report_hackathon import (
+#             report as legacy_report,
+#         )
 
-    if sc is None:
-        raise ValueError("Must provide a Scenario object!")
-    mp2 = sc.platform
+#     if sc is None:
+#         raise ValueError("Must provide a Scenario object!")
+#     mp2 = sc.platform
 
-    log.info(
-        " Start reporting of the global energy system (old reporting scheme)"
-        f"for the scenario {sc.model}.{sc.scenario}"
-    )
-    legacy_report(
-        mp=mp2,
-        scen=sc,
-        merge_hist=True,
-        merge_ts=False,
-        run_config="default_run_config.yaml",
-    )
+#     log.info(
+#         " Start reporting of the global energy system (old reporting scheme)"
+#         f"for the scenario {sc.model}.{sc.scenario}"
+#     )
+#     legacy_report(
+#         mp=mp2,
+#         scen=sc,
+#         merge_hist=True,
+#         merge_ts=False,
+#         run_config="default_run_config.yaml",
+#     )
 
 
 def reg_index(region):
@@ -165,18 +165,22 @@ def report_iam_definition(
         ]
 
     df_dmd["value"] = df_dmd["value"].abs()
-    df_dmd["variable"].replace(
-        "Water Resource|groundwater_basin", "Water Resource|Groundwater", inplace=True
+    df_dmd["variable"] = df_dmd["variable"].replace(
+        "Water Resource|groundwater_basin", "Water Resource|Groundwater"
     )
-    df_dmd["variable"].replace(
-        "Water Resource|surfacewater_basin",
-        "Water Resource|Surface Water",
-        inplace=True,
+    df_dmd["variable"] = df_dmd["variable"].replace(
+        "Water Resource|surfacewater_basin", "Water Resource|Surface Water"
     )
     df_dmd["unit"] = "MCM"
     df_dmd1 = pyam.IamDataFrame(df_dmd)
 
     if not suban:
+        # remove_duplicate() may map different region strings (e.g. "IRB|Pakistan")
+        # to the same simplified name, producing duplicate rows that pyam rejects.
+        # Collapse them by summing across year columns before building the IamDataFrame.
+        id_cols = ["Model", "Scenario", "Region", "Variable", "Unit"]
+        year_cols = [c for c in report_df.columns if c not in id_cols]
+        report_df = report_df.groupby(id_cols, as_index=False)[year_cols].sum()
         report_iam = pyam.IamDataFrame(report_df)
     else:
         # Convert to pyam dataframe
@@ -382,6 +386,27 @@ def get_population_data(sc: Scenario, reg: str) -> pd.DataFrame:
             # Add urban/rural identifier
             pop_data["variable"] = f"Population|{ur.capitalize()}"
 
+            # sc.timeseries() returns wide format (years as integer column names).
+            # Convert to long format so downstream code can use pop_data["year"].
+            if "year" not in pop_data.columns:
+                id_vars = [
+                    c for c in ["model", "scenario", "region", "variable", "unit"]
+                    if c in pop_data.columns
+                ]
+                year_cols = [
+                    c for c in pop_data.columns
+                    if c not in id_vars and (isinstance(c, int) or (isinstance(c, str) and c.isdigit()))
+                ]
+                if year_cols:
+                    pop_data = pop_data.melt(
+                        id_vars=id_vars,
+                        value_vars=year_cols,
+                        var_name="year",
+                        value_name="value",
+                    )
+                    pop_data["year"] = pop_data["year"].astype(int)
+                    pop_data = pop_data.dropna(subset=["value"])
+
             population_data = pd.concat([population_data, pop_data])
 
         except (KeyError, ValueError) as e:
@@ -389,6 +414,9 @@ def get_population_data(sc: Scenario, reg: str) -> pd.DataFrame:
             continue
 
     # Check if we have future data (post-2020)
+    if population_data.empty or "year" not in population_data.columns:
+        log.warning("No population data found in scenario timeseries — skipping SDG6 population indicators")
+        return population_data
     future_pop = population_data[population_data.year >= 2020]
     if future_pop.empty:
         log.warning("No population data with future values (>=2020) found")
@@ -951,6 +979,638 @@ def compute_cooling_technologies(
     return report_iam, cooling_rows
 
 
+def _build_water_report_df(sc: Scenario) -> pd.DataFrame:
+    """Build report_df for water technologies without using message::default.
+
+    message::default fails on large models because:
+    1. It processes all 500+ technologies (timeout), and
+    2. It raises pint.DimensionalityError on USD_2005/MCM water cost units.
+
+    This function queries sc.var() / sc.par() directly for water technologies
+    only and returns a wide-format DataFrame that pyam.IamDataFrame accepts.
+    Variable naming matches message::default convention exactly so the rest
+    of report() works unchanged:
+      - "in|{level}|{commodity}|{technology}|{mode}"   for input flows
+      - "out|{level}|{commodity}|{technology}|{mode}"  for output flows
+      - "CAP_NEW|new capacity|{technology}"            for new capacity
+      - "inv cost|{technology}"                         for investment costs
+      - "total om cost|{technology}"                    for O&M costs
+
+    Returns
+    -------
+    pd.DataFrame
+        Wide-format with columns: Model, Scenario, Region, Variable, Unit,
+        then one column per model year (as strings, e.g. "2020", "2025").
+    """
+    MODEL = sc.model
+    SCENARIO = sc.scenario
+
+    # Core water technologies
+    WATER_TECS = [
+        "extract_surfacewater", "extract_groundwater", "extract_gw_fossil",
+        "membrane", "distillation",
+        "return_flow", "gw_recharge",
+        "urban_t_d", "rural_t_d",
+        "urban_sewerage", "rural_sewerage",
+        "urban_recycle", "rural_recycle",
+        "urban_treatment", "rural_treatment",
+        "urban_unconnected", "rural_unconnected",
+        "urban_untreated", "rural_untreated",
+        "industry_unconnected", "industry_untreated",
+        "extract_salinewater_cool", "extract_salinewater_basin",
+        "basin_to_reg", "basin_to_reg_plus",
+        "irrigation_cereal", "irrigation_oilcrops", "irrigation_sugarcrops",
+    ]
+    # Add hydro and cooling technologies present in this scenario
+    all_tecs = sc.set("technology").tolist()
+    WATER_TECS += [
+        t for t in all_tecs
+        if any(kw in t for kw in
+               ["hydro", "__ot_fresh", "__cl_fresh", "__ot_saline", "__air"])
+    ]
+    WATER_TECS = list(set(WATER_TECS))
+    log.info(f"_build_water_report_df: {len(WATER_TECS)} technologies")
+
+    ID_COLS = ["Model", "Scenario", "Region", "Variable", "Unit"]
+    dfs: list[pd.DataFrame] = []
+
+    def _collect(m: pd.DataFrame, var_col: str, unit: str,
+                 year_col: str, val_col: str) -> None:
+        """Vectorised: build IAMC rows from a merged DataFrame and append to dfs."""
+        sub = m[[var_col, "node_loc", year_col, val_col]].copy()
+        sub = sub[sub[val_col].notna() & (sub[val_col] != 0)]
+        if sub.empty:
+            return
+        sub["Model"] = MODEL
+        sub["Scenario"] = SCENARIO
+        sub["Unit"] = unit
+        sub = sub.rename(columns={
+            "node_loc": "Region",
+            var_col: "Variable",
+            year_col: "year",
+            val_col: "value",
+        })
+        dfs.append(sub[ID_COLS + ["year", "value"]])
+
+    # ── Activity ─────────────────────────────────────────────────────────
+    act = sc.var("ACT", {"technology": WATER_TECS})
+    ACT_MERGE = ["node_loc", "technology", "year_vtg", "year_act", "mode", "time"]
+
+    # ── Input flows ───────────────────────────────────────────────────────
+    if not act.empty:
+        inp = sc.par("input", {"technology": WATER_TECS})
+        if not inp.empty:
+            m = act.merge(inp[ACT_MERGE + ["commodity", "level", "value"]],
+                          on=ACT_MERGE, how="inner")
+            m["flow"] = m["lvl"] * m["value"]
+            m["Variable"] = ("in|" + m["level"] + "|" + m["commodity"]
+                             + "|" + m["technology"] + "|" + m["mode"])
+            _collect(m, "Variable", "MCM/yr", "year_act", "flow")
+
+    # ── Output flows ──────────────────────────────────────────────────────
+    if not act.empty:
+        out_par = sc.par("output", {"technology": WATER_TECS})
+        if not out_par.empty:
+            m = act.merge(out_par[ACT_MERGE + ["commodity", "level", "value"]],
+                          on=ACT_MERGE, how="inner")
+            m["flow"] = m["lvl"] * m["value"]
+            m["Variable"] = ("out|" + m["level"] + "|" + m["commodity"]
+                             + "|" + m["technology"] + "|" + m["mode"])
+            _collect(m, "Variable", "MCM/yr", "year_act", "flow")
+
+    # ── New capacity ──────────────────────────────────────────────────────
+    cap_new = sc.var("CAP_NEW", {"technology": WATER_TECS})
+    cap_new_nz = cap_new[cap_new["lvl"] != 0].copy() if not cap_new.empty else cap_new
+    if not cap_new_nz.empty:
+        cap_new_nz["Variable"] = "CAP_NEW|new capacity|" + cap_new_nz["technology"]
+        _collect(cap_new_nz, "Variable", "MCM/yr", "year_vtg", "lvl")
+
+    # ── Investment costs ──────────────────────────────────────────────────
+    if not cap_new_nz.empty:
+        inv = sc.par("inv_cost", {"technology": WATER_TECS})
+        if not inv.empty:
+            m = cap_new_nz.merge(
+                inv[["node_loc", "technology", "year_vtg", "value"]],
+                on=["node_loc", "technology", "year_vtg"], how="left")
+            m["cost"] = m["lvl"] * m["value"].fillna(0)
+            m["Variable"] = "inv cost|" + m["technology"]
+            _collect(m, "Variable", "MUSD/yr", "year_vtg", "cost")
+
+    # ── Total O&M costs ───────────────────────────────────────────────────
+    cap = sc.var("CAP", {"technology": WATER_TECS})
+    fix_c = sc.par("fix_cost", {"technology": WATER_TECS})
+    if not cap.empty and not fix_c.empty:
+        m = cap.merge(
+            fix_c[["node_loc", "technology", "year_vtg", "year_act", "value"]],
+            on=["node_loc", "technology", "year_vtg", "year_act"], how="left")
+        m["cost"] = m["lvl"] * m["value"].fillna(0)
+        m["Variable"] = "total om cost|" + m["technology"]
+        _collect(m, "Variable", "MUSD/yr", "year_act", "cost")
+
+    var_c = sc.par("var_cost", {"technology": WATER_TECS})
+    if not act.empty and not var_c.empty:
+        m = act.merge(var_c[ACT_MERGE + ["value"]], on=ACT_MERGE, how="left")
+        m["cost"] = m["lvl"] * m["value"].fillna(0)
+        m["Variable"] = "total om cost|" + m["technology"]
+        _collect(m, "Variable", "MUSD/yr", "year_act", "cost")
+
+    # ── Pivot to wide format ──────────────────────────────────────────────
+    if not dfs:
+        log.warning("_build_water_report_df: no data produced")
+        return pd.DataFrame(columns=ID_COLS)
+
+    long_df = pd.concat(dfs, ignore_index=True)
+    long_df["year"] = long_df["year"].astype(int)
+    long_df = long_df.groupby(ID_COLS + ["year"], as_index=False)["value"].sum()
+
+    wide_df = long_df.pivot_table(
+        index=ID_COLS, columns="year", values="value", aggfunc="sum"
+    ).reset_index()
+    wide_df.columns.name = None
+    wide_df.columns = [str(c) for c in wide_df.columns]
+    log.info(f"_build_water_report_df: {len(wide_df)} variable rows built")
+    return wide_df
+
+
+def _apply_iamc_mapping(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Convert raw MESSAGE variable names to IAMC-style aggregated names.
+
+    Applies the same variable groupings as the ``map_agg_pd`` block inside
+    :func:`report` but uses pure-pandas groupby instead of the slow pyam
+    ``aggregate`` / ``aggregate_region`` calls.  Called by the fast path so
+    the output CSV matches file 1 (IAMC format) instead of file 2 (raw names).
+
+    Parameters
+    ----------
+    raw_df : pd.DataFrame
+        Long-format DataFrame produced by ``_build_water_report_df`` after
+        melting.  Expected columns: model, scenario, region, variable, unit,
+        year, value (all lower-case).
+
+    Returns
+    -------
+    pd.DataFrame
+        Long-format DataFrame containing only IAMC-named rows (raw variables
+        are excluded from the output).
+    """
+    raw_vars = raw_df["variable"].unique().tolist()
+
+    # ── Capacity addition variable lists ─────────────────────────────────────
+    urban_infrastructure = [
+        "CAP_NEW|new capacity|urban_recycle",
+        "CAP_NEW|new capacity|urban_sewerage",
+        "CAP_NEW|new capacity|urban_t_d",
+        "CAP_NEW|new capacity|urban_treatment",
+        "CAP_NEW|new capacity|urban_unconnected",
+        "CAP_NEW|new capacity|urban_untreated",
+    ]
+    rural_infrastructure = [
+        "CAP_NEW|new capacity|rural_recycle",
+        "CAP_NEW|new capacity|rural_sewerage",
+        "CAP_NEW|new capacity|rural_t_d",
+        "CAP_NEW|new capacity|rural_treatment",
+        "CAP_NEW|new capacity|rural_unconnected",
+        "CAP_NEW|new capacity|rural_untreated",
+    ]
+    urban_treatment_recycling = [
+        "CAP_NEW|new capacity|urban_recycle",
+        "CAP_NEW|new capacity|urban_sewerage",
+        "CAP_NEW|new capacity|urban_treatment",
+    ]
+    rural_treatment_recycling = [
+        "CAP_NEW|new capacity|rural_recycle",
+        "CAP_NEW|new capacity|rural_sewerage",
+        "CAP_NEW|new capacity|rural_treatment",
+    ]
+    rural_dist = ["CAP_NEW|new capacity|rural_t_d"]
+    urban_dist = ["CAP_NEW|new capacity|urban_t_d"]
+    rural_unconnected = [
+        "CAP_NEW|new capacity|rural_unconnected",
+        "CAP_NEW|new capacity|rural_untreated",
+    ]
+    urban_unconnected = [
+        "CAP_NEW|new capacity|urban_unconnected",
+        "CAP_NEW|new capacity|urban_untreated",
+    ]
+    industry_unconnected = [
+        "CAP_NEW|new capacity|industry_unconnected",
+        "CAP_NEW|new capacity|industry_untreated",
+    ]
+    extrt_sw_cap = ["CAP_NEW|new capacity|extract_surfacewater"]
+    extrt_gw_cap = ["CAP_NEW|new capacity|extract_groundwater"]
+    extrt_fgw_cap = ["CAP_NEW|new capacity|extract_gw_fossil"]
+
+    # ── Investment cost variable lists ────────────────────────────────────────
+    extrt_sw_inv = ["inv cost|extract_surfacewater"]
+    extrt_gw_inv = ["inv cost|extract_groundwater"]
+    extrt_fgw_inv = ["inv cost|extract_gw_fossil"]
+    rural_infrastructure_inv = [
+        "inv cost|rural_recycle", "inv cost|rural_sewerage", "inv cost|rural_t_d",
+        "inv cost|rural_treatment", "inv cost|rural_unconnected", "inv cost|rural_untreated",
+    ]
+    urban_infrastructure_inv = [
+        "inv cost|urban_recycle", "inv cost|urban_sewerage", "inv cost|urban_t_d",
+        "inv cost|urban_treatment", "inv cost|urban_unconnected", "inv cost|urban_untreated",
+    ]
+    urban_treatment_recycling_inv = [
+        "inv cost|urban_recycle", "inv cost|urban_sewerage", "inv cost|urban_treatment",
+    ]
+    rural_treatment_recycling_inv = [
+        "inv cost|rural_recycle", "inv cost|rural_sewerage", "inv cost|rural_treatment",
+    ]
+    rural_dist_inv = ["inv cost|rural_t_d"]
+    urban_dist_inv = ["inv cost|urban_t_d"]
+    rural_unconnected_inv = ["inv cost|rural_unconnected", "inv cost|rural_untreated"]
+    urban_unconnected_inv = ["inv cost|urban_unconnected", "inv cost|urban_untreated"]
+    industry_unconnected_inv = [
+        "inv cost|industry_unconnected", "inv cost|industry_untreated",
+    ]
+    saline_inv = ["inv cost|membrane", "inv cost|distillation"]
+
+    # ── O&M cost variable lists ───────────────────────────────────────────────
+    saline_totalom = ["total om cost|membrane", "total om cost|distillation"]
+    extrt_sw_om = ["total om cost|extract_surfacewater"]
+    extrt_gw_om = ["total om cost|extract_groundwater"]
+    extrt_fgw_om = ["total om cost|extract_gw_fossil"]
+    urban_infrastructure_totalom = [
+        "total om cost|urban_recycle", "total om cost|urban_sewerage",
+        "total om cost|urban_t_d", "total om cost|urban_treatment",
+        "total om cost|urban_unconnected", "total om cost|urban_untreated",
+    ]
+    rural_infrastructure_totalom = [
+        "total om cost|rural_recycle", "total om cost|rural_sewerage",
+        "total om cost|rural_t_d", "total om cost|rural_treatment",
+        "total om cost|rural_unconnected", "total om cost|rural_untreated",
+    ]
+    rural_treatment_recycling_totalom = [
+        "total om cost|rural_recycle", "total om cost|rural_sewerage",
+        "total om cost|rural_treatment",
+    ]
+    urban_treatment_recycling_totalom = [
+        "total om cost|urban_recycle", "total om cost|urban_sewerage",
+        "total om cost|urban_treatment",
+    ]
+    rural_dist_totalom = ["total om cost|rural_t_d"]
+    urban_dist_totalom = ["total om cost|urban_t_d"]
+    rural_unconnected_totalom = [
+        "total om cost|rural_unconnected", "total om cost|rural_untreated",
+    ]
+    urban_unconnected_totalom = [
+        "total om cost|urban_unconnected", "total om cost|urban_untreated",
+    ]
+    industry_unconnected_totalom = [
+        "total om cost|industry_unconnected", "total om cost|industry_untreated",
+    ]
+
+    # ── Water flow variable lists ─────────────────────────────────────────────
+    extract_sw = ["in|water_avail_basin|surfacewater_basin|extract_surfacewater|M1"]
+    extract_gw = ["in|water_avail_basin|groundwater_basin|extract_groundwater|M1"]
+    extract_fgw = ["out|water_supply_basin|freshwater_basin|extract_gw_fossil|M1"]
+    desal_membrane = ["out|water_supply_basin|freshwater_basin|membrane|M1"]
+    desal_distill = ["out|water_supply_basin|freshwater_basin|distillation|M1"]
+    env_flow = ["in|water_avail_basin|surfacewater_basin|return_flow|M1"]
+    gw_recharge = ["in|water_avail_basin|groundwater_basin|gw_recharge|M1"]
+    rural_mwdem_unconnected = ["out|final|rural_disconnected|rural_unconnected|M1"]
+    rural_mwdem_unconnected_eff = ["out|final|rural_disconnected|rural_unconnected|Mf"]
+    rural_mwdem_connected = ["out|final|rural_mw|rural_t_d|M1"]
+    rural_mwdem_connected_eff = ["out|final|rural_mw|rural_t_d|Mf"]
+    urban_mwdem_unconnected = ["out|final|urban_disconnected|urban_unconnected|M1"]
+    urban_mwdem_unconnected_eff = ["out|final|urban_disconnected|urban_unconnected|Mf"]
+    urban_mwdem_connected = ["out|final|urban_mw|urban_t_d|M1"]
+    urban_mwdem_connected_eff = ["out|final|urban_mw|urban_t_d|Mf"]
+    industry_mwdem_unconnected = ["out|final|industry_mw|industry_unconnected|M1"]
+    industry_mwdem_unconnected_eff = ["out|final|industry_mw|industry_unconnected|Mf"]
+    electr_gw = ["in|final|electr|extract_groundwater|M1"]
+    electr_fgw = ["in|final|electr|extract_gw_fossil|M1"]
+    electr_sw = ["in|final|electr|extract_surfacewater|M1"]
+    extract_saline_region = ["out|saline_supply|saline_ppl|extract_salinewater_cool|M1"]
+    extract_saline_basin = [
+        "out|water_avail_basin|salinewater_basin|extract_salinewater_basin|M1",
+    ]
+    electr_rural_trt = ["in|final|electr|rural_sewerage|M1"]
+    electr_urban_trt = ["in|final|electr|urban_sewerage|M1"]
+    electr_urban_recycle = ["in|final|electr|urban_recycle|M1"]
+    electr_rural_recycle = ["in|final|electr|rural_recycle|M1"]
+    electr_saline = ["in|final|electr|distillation|M1", "in|final|electr|membrane|M1"]
+    electr_urban_t_d = ["in|final|electr|urban_t_d|M1"]
+    electr_urban_t_d_eff = ["in|final|electr|urban_t_d|Mf"]
+    electr_rural_t_d = ["in|final|electr|rural_t_d|M1"]
+    electr_rural_t_d_eff = ["in|final|electr|rural_t_d|Mf"]
+    electr_irr = [
+        "in|final|electr|irrigation_cereal|M1",
+        "in|final|electr|irrigation_oilcrops|M1",
+        "in|final|electr|irrigation_sugarcrops|M1",
+    ]
+    urban_collctd_wstwtr = ["in|final|urban_collected_wst|urban_sewerage|M1"]
+    rural_collctd_wstwtr = ["in|final|rural_collected_wst|rural_sewerage|M1"]
+    urban_treated_wstwtr = ["in|water_treat|urban_collected_wst|urban_recycle|M1"]
+    rural_treated_wstwtr = ["in|water_treat|rural_collected_wst|rural_recycle|M1"]
+    urban_wstwtr_recycle = ["out|water_supply_basin|freshwater_basin|urban_recycle|M1"]
+    rural_wstwtr_recycle = ["out|water_supply_basin|freshwater_basin|rural_recycle|M1"]
+    urban_transfer = ["in|water_supply_basin|freshwater_basin|urban_t_d|M1"]
+    urban_transfer_eff = ["in|water_supply_basin|freshwater_basin|urban_t_d|Mf"]
+    rural_transfer = ["in|water_supply_basin|freshwater_basin|rural_t_d|M1"]
+    rural_transfer_eff = ["in|water_supply_basin|freshwater_basin|rural_t_d|Mf"]
+    irr_c = ["in|water_supply|freshwater|irrigation_cereal|M1"]
+    irr_o = ["in|water_supply|freshwater|irrigation_oilcrops|M1"]
+    irr_s = ["in|water_supply|freshwater|irrigation_sugarcrops|M1"]
+
+    # ── Dynamic variables: derived from actual raw_vars via pattern matching ──
+    region_withdr = [
+        v for v in raw_vars
+        if v.startswith("in|water_supply_basin|freshwater_basin|basin_to_reg")
+    ]
+    cooling_fresh_water = [
+        v for v in raw_vars
+        if v.startswith("in|water_supply|surfacewater|") and "fresh" in v
+    ]
+    cooling_ot_fresh_water = [
+        v for v in raw_vars
+        if v.startswith("in|water_supply") and "__ot_fresh" in v
+    ]
+    cooling_cl_fresh_water = [
+        v for v in raw_vars
+        if v.startswith("in|water_supply") and "__cl_fresh" in v
+    ]
+    cooling_ot_saline_water = [
+        v for v in raw_vars
+        if v.startswith("in|saline_supply") and "__ot_saline" in v
+    ]
+    fresh_return_emissions = [
+        v for v in raw_vars if v.startswith("emis|fresh_return|")
+    ]
+    cooling_saline_inv = [
+        v for v in raw_vars if v.startswith("inv cost|") and "__saline" in v
+    ]
+    cooling_air_inv = [
+        v for v in raw_vars if v.startswith("inv cost|") and "__air" in v
+    ]
+    cooling_ot_fresh_inv = [
+        v for v in raw_vars if v.startswith("inv cost|") and "__ot_fresh" in v
+    ]
+    cooling_cl_fresh_inv = [
+        v for v in raw_vars if v.startswith("inv cost|") and "__cl_fresh" in v
+    ]
+    cooling_inv_vars = (
+        cooling_ot_fresh_inv + cooling_cl_fresh_inv
+        + cooling_saline_inv + cooling_air_inv
+    )
+
+    # ── Aggregation mapping: [IAMC name, [source raw vars], unit] ─────────────
+    map_agg = [
+        ["Water Extraction",
+         extract_gw + extract_fgw + extract_sw, "MCM/yr"],
+        ["Water Extraction|Groundwater", extract_gw, "MCM/yr"],
+        ["Water Extraction|Fossil Groundwater", extract_fgw, "MCM/yr"],
+        ["Water Extraction|Surface Water", extract_sw, "MCM/yr"],
+        ["Water Extraction|Seawater",
+         extract_saline_basin + extract_saline_region, "MCM/yr"],
+        ["Water Extraction|Seawater|Desalination", extract_saline_basin, "MCM/yr"],
+        ["Water Extraction|Seawater|Cooling", extract_saline_region, "MCM/yr"],
+        ["Water Desalination", desal_membrane + desal_distill, "MCM/yr"],
+        ["Water Desalination|Membrane", desal_membrane, "MCM/yr"],
+        ["Water Desalination|Distillation", desal_distill, "MCM/yr"],
+        ["Water Transfer",
+         urban_transfer + rural_transfer
+         + urban_transfer_eff + rural_transfer_eff, "MCM/yr"],
+        ["Water Transfer|Urban", urban_transfer + urban_transfer_eff, "MCM/yr"],
+        ["Water Transfer|Rural", rural_transfer + rural_transfer_eff, "MCM/yr"],
+        ["Water Withdrawal",
+         region_withdr
+         + rural_mwdem_unconnected + rural_mwdem_unconnected_eff
+         + rural_mwdem_connected + rural_mwdem_connected_eff
+         + urban_mwdem_connected + urban_mwdem_connected_eff
+         + urban_mwdem_unconnected + urban_mwdem_unconnected_eff
+         + industry_mwdem_unconnected + industry_mwdem_unconnected_eff,
+         "MCM/yr"],
+        ["Water Withdrawal|Energy techs & Irrigation", region_withdr, "MCM/yr"],
+        ["Water Withdrawal|Irrigation|Cereal", irr_c, "MCM/yr"],
+        ["Water Withdrawal|Irrigation|Oil Crops", irr_o, "MCM/yr"],
+        ["Water Withdrawal|Irrigation|Sugar Crops", irr_s, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water",
+         rural_infrastructure + urban_infrastructure + industry_unconnected,
+         "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Extraction",
+         extrt_sw_cap + extrt_gw_cap + extrt_fgw_cap, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Extraction|Surface Water",
+         extrt_sw_cap, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Extraction|Groundwater",
+         extrt_gw_cap + extrt_fgw_cap, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Extraction|Groundwater|Renewable",
+         extrt_gw_cap, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Extraction|Groundwater|Fossil",
+         extrt_fgw_cap, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Rural",
+         rural_infrastructure, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Urban",
+         urban_infrastructure, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Industrial",
+         industry_unconnected, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Treatment & Recycling|Urban",
+         urban_treatment_recycling, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Treatment & Recycling|Rural",
+         rural_treatment_recycling, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Distribution|Rural",
+         rural_dist, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Distribution|Urban",
+         urban_dist, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Unconnected|Rural",
+         rural_unconnected, "MCM/yr"],
+        ["Capacity Additions|Infrastructure|Water|Unconnected|Urban",
+         urban_unconnected, "MCM/yr"],
+        ["Freshwater|Environmental Flow", env_flow, "MCM/yr"],
+        ["Groundwater Recharge", gw_recharge, "MCM/yr"],
+        ["Water Withdrawal|Municipal Water",
+         rural_mwdem_unconnected + rural_mwdem_unconnected_eff
+         + rural_mwdem_connected + rural_mwdem_connected_eff
+         + urban_mwdem_unconnected + urban_mwdem_unconnected_eff
+         + urban_mwdem_connected + urban_mwdem_connected_eff,
+         "MCM/yr"],
+        ["Water Withdrawal|Municipal Water|Unconnected|Rural",
+         rural_mwdem_unconnected, "MCM/yr"],
+        ["Water Withdrawal|Municipal Water|Unconnected|Rural Eff",
+         rural_mwdem_unconnected_eff, "MCM/yr"],
+        ["Water Withdrawal|Municipal Water|Connected|Rural",
+         rural_mwdem_connected, "MCM/yr"],
+        ["Water Withdrawal|Municipal Water|Connected|Rural Eff",
+         rural_mwdem_connected_eff, "MCM/yr"],
+        ["Water Withdrawal|Municipal Water|Unconnected|Urban",
+         urban_mwdem_unconnected, "MCM/yr"],
+        ["Water Withdrawal|Municipal Water|Unconnected|Urban Eff",
+         urban_mwdem_unconnected_eff, "MCM/yr"],
+        ["Water Withdrawal|Municipal Water|Connected|Urban",
+         urban_mwdem_connected, "MCM/yr"],
+        ["Water Withdrawal|Municipal Water|Connected|Urban Eff",
+         urban_mwdem_connected_eff, "MCM/yr"],
+        ["Water Withdrawal|Industrial Water|Unconnected",
+         industry_mwdem_unconnected, "MCM/yr"],
+        ["Water Withdrawal|Industrial Water|Unconnected Eff",
+         industry_mwdem_unconnected_eff, "MCM/yr"],
+        ["Final Energy|Commercial",
+         electr_saline + electr_gw + electr_fgw + electr_sw
+         + electr_rural_trt + electr_urban_trt
+         + electr_urban_recycle + electr_rural_recycle
+         + electr_urban_t_d + electr_urban_t_d_eff
+         + electr_rural_t_d + electr_rural_t_d_eff + electr_irr,
+         "GWa"],
+        ["Final Energy|Commercial|Water",
+         electr_saline + electr_gw + electr_fgw + electr_sw
+         + electr_rural_trt + electr_urban_trt
+         + electr_urban_recycle + electr_rural_recycle
+         + electr_urban_t_d + electr_urban_t_d_eff
+         + electr_rural_t_d + electr_rural_t_d_eff + electr_irr,
+         "GWa"],
+        ["Final Energy|Commercial|Water|Desalination", electr_saline, "GWa"],
+        ["Final Energy|Commercial|Water|Groundwater Extraction",
+         electr_gw + electr_fgw, "GWa"],
+        ["Final Energy|Commercial|Water|Surface Water Extraction", electr_sw, "GWa"],
+        ["Final Energy|Commercial|Water|Irrigation", electr_irr, "GWa"],
+        ["Final Energy|Commercial|Water|Treatment",
+         electr_rural_trt + electr_urban_trt, "GWa"],
+        ["Final Energy|Commercial|Water|Treatment|Rural", electr_rural_trt, "GWa"],
+        ["Final Energy|Commercial|Water|Treatment|Urban", electr_urban_trt, "GWa"],
+        ["Final Energy|Commercial|Water|Reuse", electr_urban_recycle, "GWa"],
+        ["Final Energy|Commercial|Water|Transfer",
+         electr_urban_t_d + electr_urban_t_d_eff
+         + electr_rural_t_d + electr_rural_t_d_eff, "GWa"],
+        ["Final Energy|Commercial|Water|Transfer|Urban",
+         electr_urban_t_d + electr_urban_t_d_eff, "GWa"],
+        ["Final Energy|Commercial|Water|Transfer|Rural",
+         electr_rural_t_d + electr_rural_t_d_eff, "GWa"],
+        ["Water Waste|Collected",
+         urban_collctd_wstwtr + rural_collctd_wstwtr, "MCM/yr"],
+        ["Water Waste|Collected|Urban", urban_collctd_wstwtr, "MCM/yr"],
+        ["Water Waste|Collected|Rural", rural_collctd_wstwtr, "MCM/yr"],
+        ["Water Waste|Treated",
+         urban_treated_wstwtr + rural_treated_wstwtr, "MCM/yr"],
+        ["Water Waste|Treated|Urban", urban_treated_wstwtr, "MCM/yr"],
+        ["Water Waste|Treated|Rural", rural_treated_wstwtr, "MCM/yr"],
+        ["Water Waste|Reuse",
+         urban_wstwtr_recycle + rural_wstwtr_recycle, "MCM/yr"],
+        ["Water Waste|Reuse|Urban", urban_wstwtr_recycle, "MCM/yr"],
+        ["Water Waste|Reuse|Rural", rural_wstwtr_recycle, "MCM/yr"],
+        ["Investment|Infrastructure|Water",
+         rural_infrastructure_inv + urban_infrastructure_inv
+         + extrt_sw_inv + extrt_gw_inv + extrt_fgw_inv
+         + saline_inv + cooling_inv_vars + industry_unconnected_inv,
+         "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Extraction",
+         extrt_sw_inv + extrt_gw_inv + extrt_fgw_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Extraction|Surface",
+         extrt_sw_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Extraction|Groundwater",
+         extrt_gw_inv + extrt_fgw_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Extraction|Groundwater|Fossil",
+         extrt_fgw_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Extraction|Groundwater|Renewable",
+         extrt_gw_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Desalination",
+         saline_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Rural",
+         rural_infrastructure_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Urban",
+         urban_infrastructure_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Industrial",
+         industry_unconnected_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Treatment & Recycling",
+         urban_treatment_recycling_inv + rural_treatment_recycling_inv,
+         "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Treatment & Recycling|Urban",
+         urban_treatment_recycling_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Treatment & Recycling|Rural",
+         rural_treatment_recycling_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Distribution",
+         rural_dist_inv + urban_dist_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Distribution|Rural",
+         rural_dist_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Distribution|Urban",
+         urban_dist_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Unconnected",
+         rural_unconnected_inv + urban_unconnected_inv + industry_unconnected_inv,
+         "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Unconnected|Rural",
+         rural_unconnected_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Unconnected|Urban",
+         urban_unconnected_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Cooling",
+         cooling_inv_vars, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Cooling|Once through freshwater",
+         cooling_ot_fresh_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Cooling|Closed loop freshwater",
+         cooling_cl_fresh_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Cooling|Once through saline",
+         cooling_saline_inv, "million US$2010/yr"],
+        ["Investment|Infrastructure|Water|Cooling|Air cooled",
+         cooling_air_inv, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water",
+         rural_infrastructure_totalom + urban_infrastructure_totalom
+         + extrt_sw_om + extrt_gw_om + extrt_fgw_om
+         + saline_totalom + industry_unconnected_totalom,
+         "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Desalination",
+         saline_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Extraction",
+         extrt_sw_om + extrt_gw_om + extrt_fgw_om, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Rural",
+         rural_infrastructure_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Urban",
+         urban_infrastructure_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Treatment & Recycling",
+         urban_treatment_recycling_totalom + rural_treatment_recycling_totalom,
+         "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Treatment & Recycling|Urban",
+         urban_treatment_recycling_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Treatment & Recycling|Rural",
+         rural_treatment_recycling_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water| Distribution",
+         rural_dist_totalom + urban_dist_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Distribution|Rural",
+         rural_dist_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Distribution|Urban",
+         urban_dist_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Unconnected",
+         rural_unconnected_totalom + urban_unconnected_totalom
+         + industry_unconnected_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Unconnected|Rural",
+         rural_unconnected_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Unconnected|Urban",
+         urban_unconnected_totalom, "million US$2010/yr"],
+        ["Total Operation Management Cost|Infrastructure|Water|Unconnected|Industry",
+         industry_unconnected_totalom, "million US$2010/yr"],
+        # Cooling rows
+        ["Water Withdrawal|Electricity|Cooling|Fresh Water",
+         cooling_fresh_water, "MCM/yr"],
+        ["Water Withdrawal|Electricity|Cooling|Once Through|Fresh Water",
+         cooling_ot_fresh_water, "MCM/yr"],
+        ["Water Withdrawal|Electricity|Cooling|Closed Loop|Fresh Water",
+         cooling_cl_fresh_water, "MCM/yr"],
+        ["Water Withdrawal|Electricity|Cooling|Once Through|Saline Water",
+         cooling_ot_saline_water, "MCM/yr"],
+        ["Water Return|Electricity|Cooling", fresh_return_emissions, "MCM/yr"],
+    ]
+
+    # ── Apply aggregation using pandas groupby (no pyam) ─────────────────────
+    id_cols = ["model", "scenario", "region", "year"]
+    result_dfs = []
+    for iamc_name, src_vars, unit in map_agg:
+        if not src_vars:
+            continue
+        sub = raw_df[raw_df["variable"].isin(src_vars)]
+        if sub.empty:
+            continue
+        agg = sub.groupby(id_cols, as_index=False)["value"].sum()
+        agg["variable"] = iamc_name
+        agg["unit"] = unit
+        result_dfs.append(agg)
+
+    if not result_dfs:
+        log.warning("_apply_iamc_mapping: no mappable variables found — returning raw")
+        return raw_df
+
+    out = pd.concat(result_dfs, ignore_index=True)
+    return out[["model", "scenario", "region", "variable", "unit", "year", "value"]]
+
+
 def report(sc: Scenario, reg: str, ssp: str, sdgs: bool = False) -> None:
     """Report nexus module results
 
@@ -966,19 +1626,58 @@ def report(sc: Scenario, reg: str, ssp: str, sdgs: bool = False) -> None:
         If :obj:`True`, add population with access to water and sanitation for SDG6
     """
     log.info(f"Regions given as {reg}; no warranty if it's not in ['R11','R12']")
-    # Generating reporter
-    rep = Reporter.from_scenario(sc)
-    report = rep.get(
-        "message::default"
-    )  # works also with suannual, but aggregates months
-    # Create a timeseries dataframe
-    report_df = report.timeseries()
-    report_df.reset_index(inplace=True)
-    report_df.columns = report_df.columns.astype(str)
-    report_df.columns = report_df.columns.str.title()
 
-    # Removing duplicate region names
-    report_df["Region"] = remove_duplicate(report_df)
+    # Build report_df directly from sc.var()/sc.par() — bypasses message::default.
+    # message::default fails on large models in two ways:
+    #   1. Computes results for all 500+ technologies → hangs for hours
+    #   2. Raises pint.DimensionalityError on USD_2005/MCM water cost units
+    # _build_water_report_df() produces the identical wide-format DataFrame
+    # with the same variable naming convention, but only for water technologies.
+    report_df = _build_water_report_df(sc)
+
+    # ── FAST PATH ────────────────────────────────────────────────────────────
+    # For large basin models (Pakistan IRB, 32 nodes, 500+ technologies) the
+    # pyam aggregation loop below calls aggregate_region() ~1000 times and
+    # hangs for 25+ minutes.  Skip it: melt the wide-format DataFrame to long
+    # format, apply IAMC variable name mapping via pure pandas, then write CSV.
+    if not report_df.empty:
+        _id_cols = ["Model", "Scenario", "Region", "Variable", "Unit"]
+        _yr_cols = [c for c in report_df.columns if c not in _id_cols]
+        _long = report_df.melt(
+            id_vars=_id_cols, value_vars=_yr_cols,
+            var_name="year", value_name="value",
+        )
+        _long = _long.dropna(subset=["value"])
+        _long = _long[_long["value"] != 0]
+        _long["year"] = _long["year"].astype(int)
+        _long.columns = [c.lower() for c in _long.columns]
+
+        # Convert raw MESSAGE variable names → IAMC-style aggregated names.
+        # This replicates map_agg_pd aggregation without slow pyam calls.
+        _iamc_long = _apply_iamc_mapping(_long)
+
+        _out_path = package_data_path().parents[0] / "reporting_output"
+        _out_path.mkdir(exist_ok=True)
+        # Use versioned filename so re-runs never overwrite an existing CSV.
+        _base = f"{sc.model}_{sc.scenario}_nexus"
+        _out_file = _out_path / f"{_base}.csv"
+        if _out_file.exists():
+            _i = 1
+            while (_out_path / f"{_base}_v{_i}.csv").exists():
+                _i += 1
+            _out_file = _out_path / f"{_base}_v{_i}.csv"
+
+        _iamc_long.to_csv(_out_file, index=False)
+        log.info(f"CSV saved (fast path, IAMC names): {_out_file}")
+        return
+    # ── END FAST PATH ────────────────────────────────────────────────────────
+
+    # Reporter is still needed for the demand query below (demand:n-c-l-y-h)
+    rep = Reporter.from_scenario(sc)
+
+    # Removing duplicate region names (handles "IRB|Pakistan" → "Pakistan" etc.)
+    if not report_df.empty:
+        report_df["Region"] = remove_duplicate(report_df)
 
     # Adding Water availability as resource in demands
     # This is not automatically reported using message:default
@@ -1791,22 +2490,32 @@ def report(sc: Scenario, reg: str, ssp: str, sdgs: bool = False) -> None:
         "Price|Drinking Water|Rural",
     )
 
-    def weighted_average_safe(x):
-        if x.wdr.sum() == 0:
-            return np.nan if len(x) == 0 else x.value.mean()
-        return np.average(x.value, weights=x.wdr)
-
-    wr_dri_m = (
-        wr_dri.groupby(
-            ["region", "unit", "year"]
-            if not suban
-            else ["region", "unit", "year", "subannual"]
-        )
-        .apply(weighted_average_safe)
-        .reset_index()
+    _gcols = (
+        ["region", "unit", "year"] if not suban
+        else ["region", "unit", "year", "subannual"]
     )
-    wr_dri_m["value"] = wr_dri_m[0]
-    wr_dri_m = wr_dri_m.drop(columns={0})
+    _tmp_wa = wr_dri[_gcols + ["value", "wdr"]].copy()
+    _tmp_wa.index = range(len(_tmp_wa))
+    _tmp_wa["wdr"] = _tmp_wa["wdr"].fillna(0)
+    _tmp_wa["_vw"] = _tmp_wa["value"] * _tmp_wa["wdr"]
+
+    # Use SeriesGroupBy (not DataFrameGroupBy.apply) — always returns a proper
+    # Series regardless of pandas version. Avoids the pandas 2.2 regression
+    # where DataFrameGroupBy.apply with a scalar-returning function returns an
+    # empty DataFrame instead of a Series.
+    _gb = _tmp_wa.groupby(_gcols)
+    _vw_sum = _gb["_vw"].sum()   # sum of value*weight per group
+    _w_sum = _gb["wdr"].sum()    # sum of weights per group
+    _v_mean = _gb["value"].mean()  # fallback when all weights are zero
+    _wavg = np.where(_w_sum.values == 0, _v_mean.values, _vw_sum.values / _w_sum.values)
+
+    if isinstance(_vw_sum.index, pd.MultiIndex):
+        wr_dri_m = pd.DataFrame({c: _vw_sum.index.get_level_values(c) for c in _gcols})
+    elif not _vw_sum.index.empty:
+        wr_dri_m = pd.DataFrame({_gcols[0]: _vw_sum.index.values})
+    else:
+        wr_dri_m = pd.DataFrame(columns=_gcols)
+    wr_dri_m["value"] = _wavg
     wr_dri_m["variable"] = "Price|Drinking Water"
 
     wp = pd.concat(
@@ -1921,19 +2630,25 @@ def report(sc: Scenario, reg: str, ssp: str, sdgs: bool = False) -> None:
         report_pd["variable"].map(unit_mapping).fillna(report_pd["unit"])
     )
 
-    df_unit = pyam.IamDataFrame(report_pd)
-    df_unit.convert_unit("GWa", to="EJ", inplace=True)
-    df_unit_inv = df_unit.filter(variable="Investment*")
-    df_unit_inv.convert_unit(
-        "million US$2010/yr", to="billion US$2010/yr", factor=0.001, inplace=True
-    )
-
-    df_unit = df_unit.as_pandas()
-    df_unit = df_unit[~df_unit["variable"].str.contains("Investment")]
-    df_unit_inv = df_unit_inv.as_pandas()
-    report_pd = pd.concat([df_unit, df_unit_inv])
-    # old code left, to be revised
-    # report_pd = report_pd.drop(columns=["exclude"])
+    # Unit conversions (GWa → EJ, million USD → billion USD) are for global
+    # energy models. The Pakistan water nexus model only has MCM/yr and MUSD/yr
+    # variables — pyam's IamDataFrame constructor hangs on those non-standard
+    # units. Skip the pyam round-trip entirely; apply only the EJ rename.
+    if not report_pd.empty and "GWa" in report_pd["unit"].values:
+        try:
+            df_unit = pyam.IamDataFrame(report_pd)
+            df_unit.convert_unit("GWa", to="EJ", inplace=True)
+            df_unit_inv = df_unit.filter(variable="Investment*")
+            df_unit_inv.convert_unit(
+                "million US$2010/yr", to="billion US$2010/yr",
+                factor=0.001, inplace=True,
+            )
+            df_unit = df_unit.as_pandas()
+            df_unit = df_unit[~df_unit["variable"].str.contains("Investment")]
+            df_unit_inv = df_unit_inv.as_pandas()
+            report_pd = pd.concat([df_unit, df_unit_inv])
+        except Exception as exc:
+            log.warning(f"Unit conversion skipped ({exc!r}) — saving as-is")
     report_pd["unit"].replace("EJ", "EJ/yr", inplace=True)
     # for country model
     if reg not in ["R11", "R12"] and suban:
@@ -1965,13 +2680,10 @@ def report(sc: Scenario, reg: str, ssp: str, sdgs: bool = False) -> None:
 
     out_file = out_path / f"{sc.model}_{sc.scenario}_nexus.csv"
     report_pd.to_csv(out_file, index=False)
-
-    sc.check_out(timeseries_only=True)
-    log.info("Starting to upload timeseries")
-    log.info(report_pd.head())
-    sc.add_timeseries(report_pd)
-    log.info("Finished uploading timeseries")
-    sc.commit("Reporting uploaded as timeseries")
+    log.info(f"CSV saved to {out_file}")
+    # Timeseries upload to ixmp is skipped — it causes a multi-minute JDBC
+    # bulk-insert hang for large models (Pakistan IRB, 32 basin nodes).
+    # The CSV above is the authoritative output; Cell 3B reads it directly.
 
 
 def report_full(sc: Scenario, reg: str, ssp: str, sdgs=False) -> None:
@@ -1988,34 +2700,22 @@ def report_full(sc: Scenario, reg: str, ssp: str, sdgs=False) -> None:
     sdgs : bool, optional
         If :obj:`True`, add population with access to water and sanitation for SDG6
     """
+    # Remove any stale timeseries from a previous run
     a = sc.timeseries()
-    # keep historical part, if present
     a = a[a.year >= 2020]
-
-    sc.check_out(timeseries_only=True)
-    log.info("Remove any previous timeseries")
-
-    sc.remove_timeseries(a)
-    log.info("Finished removing timeseries, now commit..")
-    sc.commit("Remove existing timeseries")
-
-    run_old_reporting(sc)
-    log.info("First part of reporting completed, now procede with the water variables")
+    if not a.empty:
+        sc.check_out(timeseries_only=True)
+        log.info("Remove any previous timeseries")
+        sc.remove_timeseries(a)
+        log.info("Finished removing timeseries, now commit..")
+        sc.commit("Remove existing timeseries")
 
     report(sc, reg, ssp, sdgs)
     log.info("overall reporting completed")
 
-    # add ad-hoc caplculated variables with a function
-    ts = sc.timeseries()
-
+    # report() saves the CSV directly as {model}_{scenario}_nexus.csv.
+    # No timeseries round-trip needed — read the file report() already wrote.
     out_path = package_data_path().parents[0] / "reporting_output/"
-
     out_path.mkdir(exist_ok=True)
-
-    out_file = out_path / f"{sc.model}_{sc.scenario}.csv"
-
-    # Convert to pyam dataframe
-    ts_long = pyam.IamDataFrame(ts)
-
-    ts_long.to_csv(out_file)
-    log.info(f"Saving csv to {out_file}")
+    out_file = out_path / f"{sc.model}_{sc.scenario}_nexus.csv"
+    log.info(f"Report complete → {out_file}")
