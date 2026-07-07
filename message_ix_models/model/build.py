@@ -129,62 +129,12 @@ def apply_spec(  # noqa: C901
 
         # Add elements
         add = [] if dry_run else spec["add"].set[set_name]
-        
-        # # Only use validation for sets that MUST exist beforehand
-      
         for element in add:
+            name = element.id if isinstance(element, Code) else element
+            scenario.add_set(set_name, name)
+            if set_name == "node" and name not in platform_regions:
+                scenario.platform.add_region(name, "region")
 
-            # -------------------------------
-            # Normalize input safely
-            # -------------------------------
-            if isinstance(element, Code):
-                name = element.id
-            else:
-                name = element
-            
-            # -------------------------------
-            # CASE 1: 2D SETS (GENERAL FIX)
-            # -------------------------------
-            if isinstance(name, (list, tuple)) and len(name) == 2:
-                scenario.add_set(set_name, list(name))
-                continue
-            
-            # -------------------------------
-             # CASE 2: normalize only scalar values
-            # -------------------------------
-           
-            if not isinstance(name, (list, tuple)):
-                name = str(name)
-
-          
-
-            # -------------------------------
-            # CASE 4: add to scenario
-            # -------------------------------
-            #scenario.add_set(set_name, name)
-            try:
-                    scenario.add_set(set_name, name)
-            except Exception:
-                    print("FAILED SET:", set_name)
-                    print("FAILED ELEMENT:", name)
-                    raise
-            # -------------------------------
-            # CASE 5: register node in platform
-            # -------------------------------
-            if set_name == "node":
-                if name not in platform_regions:
-                    scenario.platform.add_region(name, "region")
-
-        
-     
-
-        # for element in add:
-        #     name = element.id if isinstance(element, Code) else element
-           
-        #     scenario.add_set(set_name, name)
-        #     if set_name == "node" and name not in platform_regions:
-        #         scenario.platform.add_region(name, "region")
-        
         if len(add):
             log.info(f"  Add {len(add)} element(s)")
             log.debug("  " + ellipsize(add))
@@ -204,7 +154,7 @@ def apply_spec(  # noqa: C901
     if callable(data):
         result = data(scenario, dry_run=dry_run)
         if result:
-           # `data` function returned some data; use add_par_data()
+            # `data` function returned some data; use add_par_data()
             add_par_data(scenario, result, dry_run=dry_run)
 
     # Finalize

@@ -163,6 +163,27 @@ def add_data(scenario, context: "Context", dry_run=False):
                     raise ValueError("❌ Unmapped technology still exists!")
 
         try:
+
+            # # Show all units before adding parameters
+            # used_units = set()
+
+            # for par_name, df in data.items():
+            #     if "unit" in df.columns:
+            #         units = (
+            #             df["unit"]
+            #             .dropna()
+            #             .astype(str)
+            #             .str.strip()
+            #             .unique()
+            #         )
+            #         print(f"\nParameter: {par_name}")
+            #         print(units)
+            #         used_units.update(units)
+
+            # print("\n========== ALL UNITS ==========")
+            # for u in sorted(used_units):
+            #     print(u)
+
             add_par_data(scenario, data, dry_run=dry_run)
         except Exception as e:
             if isinstance(data, dict):
