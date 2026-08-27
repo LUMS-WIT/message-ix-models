@@ -85,7 +85,10 @@ def map_basin_region_wat(context: "Context") -> pd.DataFrame:
         df_sw.reset_index(level=0, drop=True, inplace=True)
         df_sw.reset_index(inplace=True)
         df_sw["Region"] = "B" + df_sw["BCU_name"].astype(str)
-        df_sw["Mode"] = "M" + df_sw["BCU_name"].astype(str).str.split("|").str[-1]
+        # Keep full BCU_name so basins within one region get distinct modes
+        # (splitting to the region suffix collapses all basins in a region
+        # onto one mode, see build.py clean_basin comment).
+        df_sw["Mode"] = "M" + df_sw["BCU_name"].astype(str).str.replace("|", "_", regex=False)
         df_sw.drop(columns=["BCU_name"], inplace=True)
         df_sw.set_index(["MSGREG", "Region", "Mode"], inplace=True)
         if df_sw.empty or df_sw.shape[1] == 0:
@@ -138,7 +141,10 @@ def map_basin_region_wat(context: "Context") -> pd.DataFrame:
         df_sw.reset_index(level=0, drop=True, inplace=True)
         df_sw.reset_index(inplace=True)
         df_sw["Region"] = "B" + df_sw["BCU_name"].astype(str)
-        df_sw["Mode"] = "M" + df_sw["BCU_name"].astype(str).str.split("|").str[-1]
+        # Keep full BCU_name so basins within one region get distinct modes
+        # (splitting to the region suffix collapses all basins in a region
+        # onto one mode, see build.py clean_basin comment).
+        df_sw["Mode"] = "M" + df_sw["BCU_name"].astype(str).str.replace("|", "_", regex=False)
         df_sw.drop(columns=["BCU_name"], inplace=True)
         df_sw.set_index(["MSGREG", "Region", "Mode"], inplace=True)
         if df_sw.empty or df_sw.shape[1] == 0:
@@ -205,7 +211,10 @@ def add_water_supply(context: "Context") -> dict[str, pd.DataFrame]:
 
     # Assigning proper nomenclature
     df_node["node"] = "B" + df_node["BCU_name"].astype(str)
-    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.split("|").str[-1]
+    # Keep full BCU_name so basins within one region get distinct modes
+    # (splitting to the region suffix collapses all basins in a region
+    # onto one mode, see build.py clean_basin comment).
+    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.replace("|", "_", regex=False)
     df_node["mode"] = "M" + df_node["clean_basin"]
     # df_node["region"] = (
     #     context.map_ISO_c[context.regions]

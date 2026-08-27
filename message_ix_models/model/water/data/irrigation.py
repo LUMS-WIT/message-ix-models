@@ -4,6 +4,7 @@ import pandas as pd
 from message_ix import make_df
 
 from message_ix_models import Context
+from message_ix_models.model.water.utils import REGION_NODE_MAP
 from message_ix_models.util import broadcast, package_data_path
 
 
@@ -38,7 +39,10 @@ def add_irr_structure(context: "Context") -> dict[str, pd.DataFrame]:
 
     # Assigning proper nomenclature
     df_node["node"] = "B" + df_node["BCU_name"].astype(str)
-    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.split("|").str[-1]
+    # Keep full BCU_name so basins within one region get distinct modes
+    # (splitting to the region suffix collapses all basins in a region
+    # onto one mode, see build.py clean_basin comment).
+    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.replace("|", "_", regex=False)
     df_node["mode"] = "M" + df_node["clean_basin"]
     # df_node["region"] = (
     #     context.map_ISO_c[context.regions]
@@ -46,7 +50,6 @@ def add_irr_structure(context: "Context") -> dict[str, pd.DataFrame]:
     #     else f"{context.regions}_" + df_node["REGION"].astype(str)
     # )
     # Map raw CSV REGION names to MESSAGEix node IDs (must match IRB.yaml / build.py)
-    REGION_NODE_MAP = {"PAKISTAN": "R12_PAK"}
     df_node["region"] = df_node["REGION"].replace(REGION_NODE_MAP)
     # Reference to the water configuration
     info = context["water build info"]

@@ -1,0 +1,57 @@
+irr_tech,par,node,time,unit,value
+irr_drip,water_efficiency,Indus,year,null,0.88
+irr_drip,electricity_intensity,Indus,year,kWh per m3,0.18
+irr_drip,electricity_flexibility,Indus,year,null,-0.1
+irr_drip,inv_cost,Indus,year,USD per ha,2600
+irr_drip,var_cost,Indus,year,USD per ha,78
+irr_drip,fix_cost,Indus,year,USD per ha,52
+irr_drip,cap_factor,Indus,year,null,0.9
+irr_drip,life_exp,Indus,year,year,10
+irr_flood,water_efficiency,Indus,year,null,0.4
+irr_flood,electricity_intensity,Indus,year,kWh per m3,0
+irr_flood,electricity_flexibility,Indus,year,null,0
+irr_flood,inv_cost,Indus,year,USD per ha,460
+irr_flood,var_cost,Indus,year,USD per ha,14
+irr_flood,fix_cost,Indus,year,USD per ha,10
+irr_flood,cap_factor,Indus,year,null,0.9
+irr_flood,life_exp,Indus,year,year,100
+irr_sprinkler,water_efficiency,Indus,year,null,0.7
+irr_sprinkler,electricity_intensity,Indus,year,kWh per m3,0.24
+irr_sprinkler,electricity_flexibility,Indus,year,null,-0.1
+irr_sprinkler,inv_cost,Indus,year,USD per ha,1625
+irr_sprinkler,var_cost,Indus,year,USD per ha,49
+irr_sprinkler,fix_cost,Indus,year,USD per ha,33
+irr_sprinkler,cap_factor,Indus,year,null,0.9
+irr_sprinkler,life_exp,Indus,year,year,10
+irr_canal_lining_flood,water_efficiency,Indus,year,null,0.6
+irr_canal_lining_flood,electricity_intensity,Indus,year,kWh per m3,0
+irr_canal_lining_flood,electricity_flexibility,Indus,year,null,0
+irr_canal_lining_flood,inv_cost,Indus,year,USD per ha,3110
+irr_canal_lining_flood,var_cost,Indus,year,USD per ha,94
+irr_canal_lining_flood,fix_cost,Indus,year,USD per ha,62
+irr_canal_lining_flood,cap_factor,Indus,year,null,0.9
+irr_canal_lining_flood,life_exp,Indus,year,year,50
+irr_smart,water_efficiency,Indus,year,null,0.75
+irr_smart,electricity_intensity,Indus,year,kWh per m3,0.328
+irr_smart,electricity_flexibility,Indus,year,null,1
+irr_smart,inv_cost,Indus,year,USD per ha,2825
+irr_smart,var_cost,Indus,year,USD per ha,85
+irr_smart,fix_cost,Indus,year,USD per ha,57
+irr_smart,cap_factor,Indus,year,null,0.9
+irr_smart,life_exp,Indus,year,year,10
+irr_drip_smart,water_efficiency,Indus,year,null,0.95
+irr_drip_smart,electricity_intensity,Indus,year,kWh per m3,0.23
+irr_drip_smart,electricity_flexibility,Indus,year,null,0.1
+irr_drip_smart,inv_cost,Indus,year,USD per ha,3100
+irr_drip_smart,var_cost,Indus,year,USD per ha,93
+irr_drip_smart,fix_cost,Indus,year,USD per ha,62
+irr_drip_smart,cap_factor,Indus,year,null,0.9
+irr_drip_smart,life_exp,Indus,year,year,10
+irr_sprinkler_smart,water_efficiency,Indus,year,null,0.8
+irr_sprinkler_smart,electricity_intensity,Indus,year,kWh per m3,0.29
+irr_sprinkler_smart,electricity_flexibility,Indus,year,null,-0.1
+irr_sprinkler_smart,inv_cost,Indus,year,USD per ha,2125
+irr_sprinkler_smart,var_cost,Indus,year,USD per ha,64
+irr_sprinkler_smart,fix_cost,Indus,year,USD per ha,43
+irr_sprinkler_smart,cap_factor,Indus,year,null,0.9
+irr_sprinkler_smart,life_exp,Indus,year,year,10

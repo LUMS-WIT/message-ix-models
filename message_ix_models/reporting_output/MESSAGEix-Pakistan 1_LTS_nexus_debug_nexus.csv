@@ -1,0 +1,67 @@
+model,scenario,region,variable,unit,year,value
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_hc,MCM/yr,2025,0.2630851945770303
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_lc,MCM/yr,2025,0.01269957763076297
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_hc,MUSD/yr,2025,702.7084472710852
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_lc,MUSD/yr,2025,22.35646345697144
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2025,4.415336824448527
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2025,0.19375231831015602
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2025,573.2038749765256
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2025,21.037335199613715
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_hc,MCM/yr,2030,1.1013582169053215
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_lc,MCM/yr,2030,0.11162375681785014
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_hc,MUSD/yr,2030,3163.464247163662
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_lc,MUSD/yr,2030,212.2324813129148
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2030,6.940362242462602
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2030,0.363512518855905
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2030,919.537116755747
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2030,39.56546784179009
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_lc,MCM/yr,2035,0.2777556265649928
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_lc,MUSD/yr,2035,552.4003901124577
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2035,7.301585774380246
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2035,1.0070351415080703
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2035,960.1240304543587
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2035,108.37243101498744
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_hc,MCM/yr,2040,0.03522629063567473
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_lc,MCM/yr,2040,0.6911448806942029
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_hc,MUSD/yr,2040,109.98599046304814
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_lc,MUSD/yr,2040,1435.0033814389526
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2040,7.301585774380247
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2040,2.687957030815882
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2040,953.5375998576238
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2040,286.33576167250544
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_hc,MCM/yr,2045,0.32008808571623804
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_lc,MCM/yr,2045,0.5407367280865315
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_hc,MUSD/yr,2045,1020.5784551402248
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_lc,MUSD/yr,2045,1147.762371669191
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2045,7.301585774380247
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2045,3.9640957091000963
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2045,973.9572888876703
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2045,430.5914978931397
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_lc,MCM/yr,2050,0.0244781927244697
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_lc,MUSD/yr,2050,53.09075220010233
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2050,7.301585774380247
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2050,4.021864243929845
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2050,994.3769779177168
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2050,445.30217243172393
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_hc,MCM/yr,2055,0.4033528295822921
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_lc,MCM/yr,2055,0.06090957652015244
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_hc,MUSD/yr,2055,1322.2833465215576
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_lc,MUSD/yr,2055,133.11483400596714
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2055,7.301585774380248
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2055,4.1656108445174045
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2055,1001.6476247693242
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2055,464.3067511230099
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_hc,MCM/yr,2060,0.009414355462242138
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_lc,MCM/yr,2060,0.15156251744662572
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_hc,MUSD/yr,2060,31.08497787011345
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_lc,MUSD/yr,2060,333.73914779229534
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2060,7.301585774380248
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2060,4.523298385691441
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2060,1009.0729662347958
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2060,507.62524468236364
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,CAP_NEW|new capacity|hydro_hc,MCM/yr,2070,0.1658215916608425
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,inv cost|hydro_hc,MUSD/yr,2070,546.6507755009666
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_hc|M1,MCM/yr,2070,7.301585774380249
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,out|secondary|electr|hydro_lc|M1,MCM/yr,2070,4.523298385691441
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_hc,MUSD/yr,2070,1007.371325482292
+MESSAGEix-Pakistan 1,LTS_nexus_debug,R12_PAK,total om cost|hydro_lc,MUSD/yr,2070,506.8585839390262

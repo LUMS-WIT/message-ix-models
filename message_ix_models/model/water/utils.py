@@ -45,6 +45,37 @@ kWh_m3_TO_GWa_MCM = registry("kWh/m^3").to("GWa/m^3").magnitude * 1e6
 m3_GJ_TO_MCM_GWa = registry("m^3/GJ").to("m^3/GWa").magnitude / 1e6
 # MCM not standard so have to remember to divide by 1e6 each time.
 
+#: Region-name -> MESSAGEix node ID overrides, for regions whose basin
+#: delineation REGION column doesn't already match a node ID. Shared by
+#: every module that needs a basin's parent region node (network.py,
+#: irrigation.py, the crops/ package) so the mapping can't silently drift
+#: between per-module copies.
+REGION_NODE_MAP = {"PAKISTAN": "R12_PAK"}
+
+
+def basin_region_map(context: Context) -> pd.DataFrame:
+    """Return a BCU_name-indexed frame with each basin's parent region node.
+
+    Shared by any module that needs to look up which MESSAGEix region node
+    a basin belongs to (e.g. to source basin-local electricity from the
+    right region).
+    """
+    path = package_data_path(
+        "water", "delineation", f"basins_by_region_simpl_{context.regions}.csv"
+    )
+    df_node = pd.read_csv(path, dtype={"BCU_name": str})
+    valid_basins = getattr(context, "valid_basins", None)
+    if valid_basins:
+        df_node = df_node[df_node["BCU_name"].isin(valid_basins)]
+    df_node = df_node.assign(
+        region=(
+            context.map_ISO_c[context.regions]
+            if getattr(context, "type_reg", "global") == "country"
+            else df_node["REGION"].replace(REGION_NODE_MAP)
+        )
+    )
+    return df_node.set_index("BCU_name")
+
 
 def read_config(context: Context | None = None):
     """Read the water model configuration / metadata from file.

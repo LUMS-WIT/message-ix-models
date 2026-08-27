@@ -57,7 +57,10 @@ def _load_scenario_and_cooling_data(
     # FIXME Derive node_region from scenario/codelist rather than basin CSV
     df_node = pd.read_csv(basin_path)
     df_node["node"] = "B" + df_node["BCU_name"].astype(str)
-    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.split("|").str[-1]
+    # Keep full BCU_name so basins within one region get distinct modes
+    # (splitting to the region suffix collapses all basins in a region
+    # onto one mode, see build.py clean_basin comment).
+    df_node["clean_basin"] = df_node["BCU_name"].astype(str).str.replace("|", "_", regex=False)
     df_node["mode"] = "M" + df_node["clean_basin"]
     # df_node["region"] = (
     #     context.map_ISO_c[context.regions]
@@ -410,7 +413,12 @@ def _make_investment_cost(context: "Context") -> pd.DataFrame:
         candidate_nodes = [
             n
             for n in sorted(scenario_nodes)
-            if n not in {"World", f"{context.regions}_GLB", "B" + context.regions}
+            if n
+            not in {
+                "World",
+                f"{'R12' if context.regions == 'IRB' else context.regions}_GLB",
+                "B" + context.regions,
+            }
             and not str(n).startswith("B")
         ]
         local_node = getattr(context, "map_ISO_c", {}).get(context.regions)
@@ -726,12 +734,13 @@ def cool_tech(
     year_comb = get_vintage_and_active_years(
         info, technical_lifetime=30, same_year_only=False
     )
-    valid_years = set(zip(year_comb["year_vtg"], year_comb["year_act"]))
-
-    def is_valid_year(r):
-        return (int(r["year_vtg"]), int(r["year_act"])) in valid_years
-
-    input_cool = input_cool[input_cool.apply(is_valid_year, axis=1)]
+    valid_years = pd.MultiIndex.from_arrays(
+        [year_comb["year_vtg"].astype(int), year_comb["year_act"].astype(int)]
+    )
+    is_valid_year = pd.MultiIndex.from_arrays(
+        [input_cool["year_vtg"], input_cool["year_act"]]
+    ).isin(valid_years)
+    input_cool = input_cool[is_valid_year]
 
     # Filter levels and technologies
     excluded_levels = ["water_supply", "cooling"]
@@ -740,7 +749,12 @@ def cool_tech(
     input_cool = input_cool[~is_hpl]
 
     # Handle global region swapping
-    glb = f"{context.regions}_GLB"
+    # NOTE: context.regions is "IRB" for this model, but the actual scenario
+    # node uses the "R12" naming convention (e.g. "R12_GLB"), not "IRB_GLB".
+    # Using context.regions directly here silently never matches any real
+    # node, making this swap (and the two similar checks elsewhere in this
+    # file) a no-op.
+    glb = f"{'R12' if context.regions == 'IRB' else context.regions}_GLB"
     is_glb_loc = input_cool["node_loc"] == glb
     is_glb_origin = input_cool["node_origin"] == glb
     input_cool.loc[is_glb_loc, "node_loc"] = input_cool["node_origin"]
@@ -757,14 +771,15 @@ def cool_tech(
     have_2015 = set(zip(input_cool_2015["parent_tech"], input_cool_2015["node_loc"]))
     missing = existing - have_2015
 
-    def is_missing(r):
-        return (r["parent_tech"], r["node_loc"]) in missing
-
     for year in [2020, 2010, 2030, 2050, 2000, 2080, 1990]:
         if not missing:
             break
         yr_match = (input_cool["year_act"] == year) & (input_cool["year_vtg"] == year)
-        fill = input_cool[yr_match & input_cool.apply(is_missing, axis=1)].copy()
+        missing_index = pd.MultiIndex.from_tuples(missing)
+        is_missing_mask = pd.MultiIndex.from_arrays(
+            [input_cool["parent_tech"], input_cool["node_loc"]]
+        ).isin(missing_index)
+        fill = input_cool[yr_match & is_missing_mask].copy()
         if not fill.empty:
             fill[["year_act", "year_vtg"]] = 2015
             input_cool_2015 = pd.concat([input_cool_2015, fill])
@@ -844,9 +859,16 @@ def non_cooling_tec(context: "Context", scenario=None) -> dict[str, pd.DataFrame
     non_cool["value"] = withdrawal * CONFIG["m3_gj_to_mcm_gwa"]
 
     output_data = scen.par("output", {"technology": non_cool["technology"].unique()})
+    # NOTE: context.regions is "IRB" for this model, but the actual scenario
+    # node uses "R12" (e.g. "R12_GLB"), not "IRB_GLB" -- see the matching note
+    # in cool_tech() above. Using context.regions directly here silently
+    # never matched R12_GLB, so global-node technologies (e.g. uran2u5) were
+    # getting a "surfacewater" input at R12_GLB even though R12_GLB is a
+    # dummy/virtual trade node with no basin or water-supply infrastructure,
+    # making it structurally infeasible for them to ever satisfy that input.
+    glb_node = f"{'R12' if context.regions == 'IRB' else context.regions}_GLB"
     output_data = output_data[
-        (output_data["node_loc"] != f"{context.regions}_GLB")
-        & (output_data["node_dest"] != f"{context.regions}_GLB")
+        (output_data["node_loc"] != glb_node) & (output_data["node_dest"] != glb_node)
     ]
 
     merged = output_data.merge(non_cool, on="technology", how="right").dropna()

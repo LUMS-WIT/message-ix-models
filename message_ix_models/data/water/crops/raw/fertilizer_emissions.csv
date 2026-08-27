@@ -1,0 +1,26 @@
+fertilizer,out,value,unit,source
+N,CO2,2.797,kg/kg,JEC E3-database (version 31-7-2008)
+N,CH4,0.0151,kg/kg,JEC E3-database (version 31-7-2008)
+N,N2O,0.0745,kg/kg,JEC E3-database (version 31-7-2008)
+N,CO2eq,0.536,kg/kg,JEC E3-database (version 31-7-2008)
+N,N,0.1,kg/kg,doi:10.5194/hess-14-1259-2010
+P2O5,CO2,0.9649,kg/kg,JEC E3-database (version 31-7-2008)
+P2O5,CH4,0.0013,kg/kg,JEC E3-database (version 31-7-2008)
+P2O5,N2O,0.0001,kg/kg,JEC E3-database (version 31-7-2008)
+P2O5,CO2eq,1.0107,kg/kg,JEC E3-database (version 31-7-2008)
+P2O5,P2O5,0.2,kg/kg,assumed
+K2O,CO2,0.5363,kg/kg,JEC E3-database (version 31-7-2008)
+K2O,CH4,0.0016,kg/kg,JEC E3-database (version 31-7-2008)
+K2O,N2O,0,kg/kg,JEC E3-database (version 31-7-2008)
+K2O,CO2eq,0.5761,kg/kg,JEC E3-database (version 31-7-2008)
+K2O,K2O,0.1,kg/kg,assumed
+CaO,CO2,0.1191,kg/kg,JEC E3-database (version 31-7-2008)
+CaO,CH4,0.0002,kg/kg,JEC E3-database (version 31-7-2008)
+CaO,N2O,0,kg/kg,JEC E3-database (version 31-7-2008)
+CaO,CO2eq,0.1295,kg/kg,JEC E3-database (version 31-7-2008)
+CaO,CaO,0.1,kg/kg,assumed
+pesticides,CO2,9.8865,kg/kg,JEC E3-database (version 31-7-2008)
+pesticides,CH4,0.0255,kg/kg,JEC E3-database (version 31-7-2008)
+pesticides,N2O,0.0017,kg/kg,JEC E3-database (version 31-7-2008)
+pesticides,CO2eq,10.9713,kg/kg,JEC E3-database (version 31-7-2008)
+pesticides,pesticides,0.1,kg/kg,assumed

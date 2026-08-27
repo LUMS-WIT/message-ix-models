@@ -170,6 +170,20 @@ def assert_message_params():
                 bad = [t for t in times if isinstance(t, str) and len(t) == 1]
                 assert not bad, f"{key}: invalid time values {bad}"
 
+            # node_* columns not corrupted the same way: a bare Python str
+            # passed to broadcast(**kwargs) (instead of make_df(), or
+            # wrapped in a list) is itself iterable, so broadcast() silently
+            # explodes e.g. "BX|TEST" into one row per character ("B", "X",
+            # "|", ...) instead of raising. Caught for real in network.py's
+            # technical_lifetime/inv_cost/etc. via a solve-level check --
+            # this generic guard is cheap enough to run for every water
+            # data function, not just that one.
+            node_cols = [c for c in df.columns if c == "node" or c.startswith("node_")]
+            for col in node_cols:
+                values = df[col].dropna().unique()
+                bad = [v for v in values if isinstance(v, str) and len(v) == 1]
+                assert not bad, f"{key}: exploded {col} values {bad}"
+
             # year_vtg <= year_act
             if "year_vtg" in df.columns and "year_act" in df.columns:
                 assert (df["year_vtg"] <= df["year_act"]).all(), (

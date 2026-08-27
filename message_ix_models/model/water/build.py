@@ -309,6 +309,74 @@ def get_spec(context: Context) -> Mapping[str, ScenarioInfo]:
         nodes = list(map(str, n_codes[n_codes.index(Code(id="World"))].child))
         require.set["node"].extend(nodes)
 
+        # Inter-basin network technologies (water transfer + electricity
+        # transmission) are generated dynamically from
+        # basin_links_<regions>.csv rather than statically enumerated in
+        # technology.yaml like other nexus technologies, so their names are
+        # registered here instead of via context["water technology"]["nexus"].
+        from .data.network import network_technology_names
+
+        network_techs = network_technology_names(context)
+        if network_techs:
+            add.set["technology"].extend(network_techs)
+            add.set["type_tec"].append("water_network")
+            add.set["cat_tec"].extend([["water_network", t] for t in network_techs])
+
+        # Crop/rainfed/irrigation technologies (real-data port of the
+        # legacy R model's crop submodel) are likewise data-driven (one
+        # technology per crop found in the real crop data, not statically
+        # enumerable in technology.yaml), and introduce genuinely new
+        # commodities/levels the rest of the water module doesn't already
+        # have -- registered dynamically here for the same reason as the
+        # network technologies above.
+        from .data.crops.common import CONFIG as _crops_config
+        from .data.crops.land import crop_commodity_names, crop_technology_names
+        from .data.crops.rainfed import rainfed_commodity_names, rainfed_technology_names
+
+        crop_techs = crop_technology_names(context)
+        if crop_techs:
+            add.set["technology"].extend(crop_techs)
+            add.set["type_tec"].append("water_crops")
+            add.set["cat_tec"].extend([["water_crops", t] for t in crop_techs])
+            add.set["commodity"].extend(crop_commodity_names())
+            add.set["level"].append("crop")
+            # Phase 4: crop_<crop>'s real fertilizer emission_factor uses a
+            # new combined-GWP emission category, not one of the base
+            # model's individual-species codes -- same pattern the water
+            # module already uses for its own "fresh_return" category
+            # above. See land.py's module docstring.
+            if _crops_config.get("emission_factor_enabled", False):
+                add.set["emission"].append(_crops_config["emission_category"])
+                add.set["type_emission"].append(_crops_config["type_emission"])
+                add.set["cat_emission"].append(
+                    [_crops_config["type_emission"], _crops_config["emission_category"]]
+                )
+
+        rainfed_techs = rainfed_technology_names(context)
+        if rainfed_techs:
+            add.set["technology"].extend(rainfed_techs)
+            add.set["type_tec"].append("water_crops")
+            add.set["cat_tec"].extend([["water_crops", t] for t in rainfed_techs])
+            add.set["commodity"].extend(rainfed_commodity_names())
+            add.set["level"].extend(["area", "crop_yield"])
+
+        from .data.crops.irrigation_tech import (
+            irrigation_commodity_names,
+            irrigation_relation_names,
+            irrigation_technology_names,
+        )
+
+        irrigation_techs = irrigation_technology_names(context)
+        if irrigation_techs:
+            add.set["technology"].extend(irrigation_techs)
+            add.set["type_tec"].append("water_crops")
+            add.set["cat_tec"].extend([["water_crops", t] for t in irrigation_techs])
+            add.set["commodity"].extend(irrigation_commodity_names())
+            add.set["level"].extend(["area", "crop_yield"])
+            # The historical-withdrawal demand-pull relation (see
+            # irrigation_tech.py module docstring) -- one per basin.
+            add.set["relation"].extend(irrigation_relation_names(context))
+
         # Share commodity for groundwater
         results = {}
         df_node = context.all_nodes
@@ -560,8 +628,14 @@ def map_basin(context: Context) -> Mapping[str, ScenarioInfo]:
     # Apply basin filter to reduce number of basins per region
     df = filter_basins_by_region(df, context)
 
-    # ✅ CLEAN basin names (THIS IS THE MAIN FIX)
-    df["clean_basin"] = df["BCU_name"].apply(lambda x: str(x).split("|")[1])
+    # Keep the full BCU_name (basin id + region) so that basins within the
+    # same region get distinct mode identifiers. Splitting on "|" and taking
+    # only the region suffix collapses e.g. "12|PAKISTAN" and "13|PAKISTAN"
+    # onto the identical mode "MPAKISTAN", which silently merges every
+    # basin in a multi-basin region into one technology/mode and breaks
+    # share_mode_up (SHARE_CONSTRAINT_MODE_UP reduces to ACT <= share*ACT,
+    # infeasible for any share < 1 once there is only one mode).
+    df["clean_basin"] = df["BCU_name"].apply(lambda x: str(x).replace("|", "_"))
 
     # ✅ Use CLEAN names for nodes
     df["node"] = "B" + df["BCU_name"].astype(str)

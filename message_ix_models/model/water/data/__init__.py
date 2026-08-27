@@ -11,9 +11,13 @@ import pandas as pd
 from message_ix_models import ScenarioInfo
 from message_ix_models.util import add_par_data
 
+from .crops.irrigation_tech import add_irrigation_techs
+from .crops.land import add_crop_land_techs
+from .crops.rainfed import add_rainfed_techs
 from .demands import add_irrigation_demand, add_sectoral_demands, add_water_availability
 from .infrastructure import add_desalination, add_infrastructure_techs
 from .irrigation import add_irr_structure
+from .network import add_network_techs
 from .water_for_ppl import cool_tech, non_cooling_tec
 from .water_supply import add_e_flow, add_water_supply
 
@@ -27,6 +31,7 @@ DataFunc = Callable[["Context"], dict[str, pd.DataFrame]]
 
 DATA_FUNCTIONS: list[DataFunc] = [
     add_water_supply,
+    add_network_techs,  # Inter-basin water transfer & electricity transmission
     cool_tech,  # Water & parasitic_electricity requirements for cooling technologies
     non_cooling_tec,
     add_sectoral_demands,
@@ -40,6 +45,7 @@ DATA_FUNCTIONS: list[DataFunc] = [
 
 DATA_FUNCTIONS_COUNTRY: list[DataFunc] = [
     add_water_supply,
+    add_network_techs,  # Inter-basin water transfer & electricity transmission
     cool_tech,  # Water & parasitic_electricity requirements for cooling technologies
     non_cooling_tec,
     add_sectoral_demands,
@@ -48,7 +54,16 @@ DATA_FUNCTIONS_COUNTRY: list[DataFunc] = [
     add_infrastructure_techs,
     add_desalination,
     add_e_flow,
-    # add if statement: if irrigation: land component from external model
+    # add_irrigation_demand (GLOBIOM-linked, above) is a no-op for the IRB/
+    # country path -- replaced by a locally-computed, real-data port of the
+    # legacy R model's crop/rainfed/irrigation submodel (crops/ package).
+    # Full three-tier port: crop_<crop> land-commitment,
+    # rainfed_<crop>, and irr_<method>_<crop> (the layer that actually
+    # draws real basin-level irrigation water/electricity demand, gated
+    # by a real historical-withdrawal floor -- see irrigation_tech.py).
+    add_crop_land_techs,
+    add_rainfed_techs,
+    add_irrigation_techs,
 ]
 
 
@@ -116,9 +131,6 @@ def add_data(scenario, context: "Context", dry_run=False):
     info = ScenarioInfo(scenario)
     context["water build info"] = info
 
-    def map_tech(t):
-        return str(t).split("__")[0]
-
     data_funcs: list[DataFunc] = (
         [add_water_supply, cool_tech, non_cooling_tec]
         if context.nexus_set == "cooling"
@@ -137,30 +149,20 @@ def add_data(scenario, context: "Context", dry_run=False):
                 f"{type(e).__name__}: {e}"
             ) from e
 
-        # 🔥 FORCE mapping AFTER function output
-        def process_df(df):
-            if hasattr(df, "columns") and "technology" in df.columns:
-                df = df.copy()
-                df["technology"] = df["technology"].astype(str).apply(map_tech)
-            return df
-
+        # NOTE: a previous version of this loop unconditionally stripped
+        # everything after "__" from every "technology" column (e.g.
+        # "coal_adv__ot_fresh" -> "coal_adv") before writing to the scenario.
+        # That collapsed every cooling-addon technology's data onto its
+        # parent technology, leaving the addons (input/output/capacity_factor/
+        # technical_lifetime/etc.) completely empty -- while addon_lo=1 still
+        # required them to run, producing a hard infeasibility
+        # (ADDON_ACTIVITY_LO unsatisfiable). The "__" suffix is the addon
+        # technology's identity, not a naming artifact to be cleaned up, so
+        # the mapping is removed rather than narrowed.
         if isinstance(data, dict):
-            data = {k: process_df(v) for k, v in data.items()}
             data = _sanitize_node_columns(data, func.__name__)
         else:
-            data = process_df(data)
             data = _sanitize_node_columns({"_": data}, func.__name__)["_"]
-
-        # 🔥 FINAL SAFETY CHECK (PRINT DEBUG)
-        if isinstance(data, dict):
-            for k, df in data.items():
-                if hasattr(df, "columns") and "technology" in df.columns:
-                    if df["technology"].str.contains("__ot_").any():
-                        raise ValueError("❌ Unmapped technology still exists!")
-        else:
-            if hasattr(data, "columns") and "technology" in data.columns:
-                if data["technology"].str.contains("__ot_").any():
-                    raise ValueError("❌ Unmapped technology still exists!")
 
         try:
 

@@ -1,0 +1,136 @@
+crop,par,node,time,unit,value
+wheat,inv_cost,pak,year,USD per ha,341
+wheat,var_cost,pak,year,USD per ha,72
+wheat,fix_cost,pak,year,USD per ha,36
+wheat,crop_coef,pak,1,null,1.15
+wheat,crop_coef,pak,2,null,1.2
+wheat,crop_coef,pak,3,null,1.1
+wheat,crop_coef,pak,4,null,0.6
+wheat,crop_coef,pak,5,null,0.3
+wheat,crop_coef,pak,6,null,0
+wheat,crop_coef,pak,7,null,0
+wheat,crop_coef,pak,8,null,0
+wheat,crop_coef,pak,9,null,0
+wheat,crop_coef,pak,10,null,0
+wheat,crop_coef,pak,11,null,0.25
+wheat,crop_coef,pak,12,null,0.5
+rice,inv_cost,pak,year,USD per ha,716
+rice,var_cost,pak,year,USD per ha,22
+rice,fix_cost,pak,year,USD per ha,15
+rice,crop_coef,pak,1,null,0
+rice,crop_coef,pak,2,null,0
+rice,crop_coef,pak,3,null,0
+rice,crop_coef,pak,4,null,0
+rice,crop_coef,pak,5,null,0
+rice,crop_coef,pak,6,null,0.65
+rice,crop_coef,pak,7,null,1.2
+rice,crop_coef,pak,8,null,1.45
+rice,crop_coef,pak,9,null,1
+rice,crop_coef,pak,10,null,0.4
+rice,crop_coef,pak,11,null,0
+rice,crop_coef,pak,12,null,0
+cotton,inv_cost,pak,year,USD per ha,416
+cotton,var_cost,pak,year,USD per ha,13
+cotton,fix_cost,pak,year,USD per ha,9
+cotton,crop_coef,pak,1,null,0
+cotton,crop_coef,pak,2,null,0
+cotton,crop_coef,pak,3,null,0
+cotton,crop_coef,pak,4,null,0
+cotton,crop_coef,pak,5,null,0.3
+cotton,crop_coef,pak,6,null,0.75
+cotton,crop_coef,pak,7,null,1.1
+cotton,crop_coef,pak,8,null,1
+cotton,crop_coef,pak,9,null,0.7
+cotton,crop_coef,pak,10,null,0.5
+cotton,crop_coef,pak,11,null,0.4
+cotton,crop_coef,pak,12,null,0
+fodder,inv_cost,pak,year,USD per ha,130
+fodder,var_cost,pak,year,USD per ha,4
+fodder,fix_cost,pak,year,USD per ha,3
+fodder,crop_coef,pak,1,null,0
+fodder,crop_coef,pak,2,null,0
+fodder,crop_coef,pak,3,null,0
+fodder,crop_coef,pak,4,null,0
+fodder,crop_coef,pak,5,null,0
+fodder,crop_coef,pak,6,null,0.2
+fodder,crop_coef,pak,7,null,0.3
+fodder,crop_coef,pak,8,null,0.65
+fodder,crop_coef,pak,9,null,1.15
+fodder,crop_coef,pak,10,null,0.85
+fodder,crop_coef,pak,11,null,0.25
+fodder,crop_coef,pak,12,null,0
+sugarcane,inv_cost,pak,year,USD per ha,849.6
+sugarcane,var_cost,pak,year,USD per ha,25.5
+sugarcane,fix_cost,pak,year,USD per ha,17
+sugarcane,crop_coef,pak,1,null,0
+sugarcane,crop_coef,pak,2,null,0.3
+sugarcane,crop_coef,pak,3,null,0.6
+sugarcane,crop_coef,pak,4,null,1.1
+sugarcane,crop_coef,pak,5,null,1.12
+sugarcane,crop_coef,pak,6,null,1.15
+sugarcane,crop_coef,pak,7,null,1.25
+sugarcane,crop_coef,pak,8,null,1.23
+sugarcane,crop_coef,pak,9,null,1.1
+sugarcane,crop_coef,pak,10,null,1.07
+sugarcane,crop_coef,pak,11,null,0.99
+sugarcane,crop_coef,pak,12,null,0.57
+pulses,inv_cost,pak,year,USD per ha,1320
+pulses,var_cost,pak,year,USD per ha,39.6
+pulses,fix_cost,pak,year,USD per ha,26.4
+pulses,crop_coef,pak,1,null,0.85
+pulses,crop_coef,pak,2,null,1.25
+pulses,crop_coef,pak,3,null,0.3
+pulses,crop_coef,pak,4,null,0
+pulses,crop_coef,pak,5,null,0
+pulses,crop_coef,pak,6,null,0
+pulses,crop_coef,pak,7,null,0
+pulses,crop_coef,pak,8,null,0
+pulses,crop_coef,pak,9,null,0
+pulses,crop_coef,pak,10,null,0
+pulses,crop_coef,pak,11,null,0.3
+pulses,crop_coef,pak,12,null,0.45
+maize,inv_cost,pak,year,USD per ha,1000
+maize,var_cost,pak,year,USD per ha,30
+maize,fix_cost,pak,year,USD per ha,20
+maize,crop_coef,pak,1,null,0
+maize,crop_coef,pak,2,null,0
+maize,crop_coef,pak,3,null,0
+maize,crop_coef,pak,4,null,0
+maize,crop_coef,pak,5,null,0
+maize,crop_coef,pak,6,null,0
+maize,crop_coef,pak,7,null,0.15
+maize,crop_coef,pak,8,null,0.62
+maize,crop_coef,pak,9,null,0.85
+maize,crop_coef,pak,10,null,0.75
+maize,crop_coef,pak,11,null,0.35
+maize,crop_coef,pak,12,null,0
+fruit,inv_cost,pak,year,USD per ha,545.5
+fruit,var_cost,pak,year,USD per ha,16.5
+fruit,fix_cost,pak,year,USD per ha,11.5
+fruit,crop_coef,pak,1,null,0.537375
+fruit,crop_coef,pak,2,null,0.543125
+fruit,crop_coef,pak,3,null,0.549125
+fruit,crop_coef,pak,4,null,0.556
+fruit,crop_coef,pak,5,null,0.563875
+fruit,crop_coef,pak,6,null,0.583
+fruit,crop_coef,pak,7,null,0.596
+fruit,crop_coef,pak,8,null,0.60825
+fruit,crop_coef,pak,9,null,0.619125
+fruit,crop_coef,pak,10,null,0.626625
+fruit,crop_coef,pak,11,null,0.639
+fruit,crop_coef,pak,12,null,0.644
+vegetables,inv_cost,pak,year,USD per ha,1362.5
+vegetables,var_cost,pak,year,USD per ha,41
+vegetables,fix_cost,pak,year,USD per ha,27.5
+vegetables,crop_coef,pak,1,null,0.75
+vegetables,crop_coef,pak,2,null,0.75
+vegetables,crop_coef,pak,3,null,0.5
+vegetables,crop_coef,pak,4,null,1.15
+vegetables,crop_coef,pak,5,null,1.15
+vegetables,crop_coef,pak,6,null,1.15
+vegetables,crop_coef,pak,7,null,0.75
+vegetables,crop_coef,pak,8,null,0.7
+vegetables,crop_coef,pak,9,null,1.05
+vegetables,crop_coef,pak,10,null,1.05
+vegetables,crop_coef,pak,11,null,1.05
+vegetables,crop_coef,pak,12,null,1.05

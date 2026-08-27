@@ -1,0 +1,154 @@
+# Archetype/constant configuration for the crop/rainfed/irrigation technology
+# port from the legacy R+GAMS "indus_ix" model
+# (NEST/MESSAGEix/basin_msggdx_technologies.r, ~line 12540-13020).
+#
+# Per-basin, per-crop, per-technology data lives in the CSVs alongside this
+# file (built by pre_processing/build_crop_data_IRB.py); this file holds only
+# the constants and static archetypes the R model hardcodes directly in
+# basin_msggdx_load_inputs.r / basin_msggdx_technologies.r.
+
+# The 9 crops modeled -- confirmed identical across crop_input_data.csv and
+# crop_irrigation_water_calibrated.csv. Static here (not derived from the
+# CSV at import time) so a schema drift in the raw data fails loudly via the
+# assertion in build_crop_data_IRB.py rather than silently changing which
+# technologies exist between runs.
+crops:
+  - cotton
+  - fodder
+  - fruit
+  - maize
+  - pulses
+  - rice
+  - sugarcane
+  - vegetables
+  - wheat
+
+# The 7 irrigation methods (irr_tech_data.csv's `irr_tech` column). Only
+# `irr_flood` gets a historical-capacity bound from crop_irr_land_2015 in
+# the R model (`grepl('irr_flood_', irr_tech_name)`); everyone else gets
+# none. See irrigation_tech.py's module docstring ("Multi-vintage +
+# relation infeasibility") for why this matters here beyond fidelity: only
+# the historically-seeded method can ever have nonzero capacity at all in
+# this port (new capacity cannot be built from a zero base -- a real
+# message_ix behavior, not a bug in this module), so in practice only
+# irr_flood_<crop> technologies ever show real activity.
+irrigation_methods:
+  irr_drip:
+    historical_capacity: false
+  irr_flood:
+    historical_capacity: true
+  irr_sprinkler:
+    historical_capacity: false
+  irr_canal_lining_flood:
+    historical_capacity: false
+  irr_smart:
+    historical_capacity: false
+  irr_drip_smart:
+    historical_capacity: false
+  irr_sprinkler_smart:
+    historical_capacity: false
+
+# Field-level water-loss constants (R model: field_efficiency = 0.85,
+# water_course_efficiency = 0.55 -- "assuming all irrigation is basically
+# flood irrigation based on discussions with stakeholders", aligned with
+# Wu et al. 2013 World Bank figure 5.4). Applied as:
+#   withdrawal = crop_water_requirement / (water_efficiency * field_efficiency_conv)
+field_efficiency: 0.85
+water_course_efficiency: 0.55
+# = field_efficiency * water_course_efficiency, precomputed for convenience.
+field_efficiency_conv: 0.4675
+
+# On-farm machinery energy intensity (R model: Rao et al. 2018 average).
+# NOT currently wired into any technology -- dropped from scope (see
+# crops/land.py module docstring) since nothing in this model produces or
+# consumes a matching commodity; kept here only as the source constant in
+# case that decision is revisited.
+machinery_ei_kwh_per_kg: 0.13
+
+# Whether crop_<crop> technologies get a real emission_factor, from Phase
+# 4's province->basin area-weighted fertilizer emissions
+# (build_fertilizer_weights_IRB.py -> emission_factor_IRB.csv), or omit the
+# parameter entirely (honest -- zero emissions tracked -- rather than a
+# fabricated placeholder value).
+emission_factor_enabled: true
+
+# The emission category used for crop_<crop>'s emission_factor. Not one of
+# the base model's individual-species emission codes (CO2/CH4/N2O/...,
+# see data/emission.yaml) -- the source data
+# (fertilizer_emissions.csv) already reports a single combined
+# CO2-equivalent figure (JEC E3-database GWPs), so this is registered as
+# its own new emission/type_emission/cat_emission trio in build.py, the
+# same pattern the water module already uses for its own
+# "fresh_return"/"water_consumption" emission category (see set.yaml).
+emission_category: CO2eq
+type_emission: crop_fertilizer_ghg
+
+# 100-year GWPs for converting pollutants to CO2eq (IPCC AR5), R model:
+# basin_msggdx_load_inputs.r ~line 56-65. Only CH4/CO2 are relevant to the
+# crop emission_factor (fertilizer N2O/CH4 + residue CH4); kept complete for
+# fidelity with the source.
+gwp:
+  BCA: 460
+  CH4: 28
+  CO: 0
+  N2O: 265
+  NH3: 0
+  NOx: 0
+  OCA: -69
+  SO2: 0
+  VOC: 0
+  CO2: 1
+
+# Default IPCC CH4 emission factor for rice specifically (R model:
+# crop_ch4 = 1300, metric tons per Mha per day) -- rice paddies are a
+# distinct CH4 source not covered by the fertilizer-emissions table.
+rice_ch4_emission_factor: 1300
+
+# Crop residue yield / bioenergy conversion data (R model:
+# basin_msggdx_load_inputs.r ~line 427, Lal 2004; basin_msggdx_technologies.r
+# ~line 12554 adds fruit/vegetables as zero-residue crops). kt residue per
+# Mha; ethanol_ratio and var_eth_cost are null for crops with no liquid
+# biofuel pathway.
+residue_data:
+  cotton:     {res_yield: 6700,  liquid: false, ethanol_ratio: null,  var_eth_cost: null}
+  fodder:     {res_yield: 8400,  liquid: true,  ethanol_ratio: 0.67,  var_eth_cost: 0.316}
+  pulses:     {res_yield: 6480,  liquid: false, ethanol_ratio: null,  var_eth_cost: null}
+  rice:       {res_yield: 6700,  liquid: true,  ethanol_ratio: 0.70,  var_eth_cost: 0.410}
+  sugarcane:  {res_yield: 5600,  liquid: true,  ethanol_ratio: 0.153, var_eth_cost: 0.291}
+  wheat:      {res_yield: 5000,  liquid: true,  ethanol_ratio: 0.67,  var_eth_cost: 0.621}
+  maize:      {res_yield: 10100, liquid: true,  ethanol_ratio: 0.67,  var_eth_cost: 0.43}
+  fruit:      {res_yield: 0,     liquid: false, ethanol_ratio: null,  var_eth_cost: null}
+  vegetables: {res_yield: 0,     liquid: false, ethanol_ratio: null,  var_eth_cost: null}
+
+# Technical lifetime for crop_<crop> and rainfed_<crop> technologies.
+#
+# The R model uses lft = 1 (annual/rotational -- a fresh land-allocation
+# decision every single year, matching real crop-planting choice). That
+# value is NOT used here, and this is a real, confirmed, deliberate
+# departure from the R model, not a stylistic simplification:
+#
+# A lft=1 (same-year-only) technology can *only* get capacity from
+# historical_new_capacity registered at year_vtg == that same year -- but
+# historical_new_capacity is only meaningful for a genuine pre-model year
+# (year_vtg < firstmodelyear). With lft=1, no such year is ever reachable,
+# so historical_new_capacity silently produces zero usable capacity, and
+# crop_<crop> (and therefore everything downstream -- rainfed_<crop>,
+# irr_<method>_<crop>, all of which consume crop_<crop>'s land output)
+# is permanently inert. Confirmed for real: every crop_<crop> technology
+# showed exactly 0 activity in every real-scenario check, in all 216
+# (node, year) combinations, despite historical_new_capacity being
+# correctly generated from real 2015 land data -- the capacity was there
+# in the *parameter*, but never reachable by any valid (vintage, active
+# year) pair in the *model*. (New capacity also cannot be built from a
+# zero base in this environment regardless of bound/dynamic-constraint
+# settings -- confirmed separately during the irr_<method>_<crop> fix in
+# irrigation_tech.py -- so there is no other route to nonzero capacity.)
+#
+# Fix: a real, long lifetime (matching the successful irr_flood fix in
+# irrigation_tech.py) so the single real historical seed year persists
+# across the entire model horizon. Real tradeoff: land committed to a
+# crop no longer represents a fresh annual choice, but a persistent
+# allocation carried forward from the 2015 baseline -- a fidelity loss
+# versus the R model's annual re-optimization, accepted because the
+# alternative is zero activity at all, always.
+crop_technical_lifetime: 50

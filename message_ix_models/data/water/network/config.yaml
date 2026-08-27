@@ -1,0 +1,118 @@
+# Configuration for inter-basin network technologies (water transfer &
+# electricity transmission between basin nodes).
+#
+# Consumed by message_ix_models/model/water/data/network.py, which generates
+# one MESSAGEix technology per row of basin_links_<regions>.csv. Each row's
+# `link_type` selects one of the archetypes below for its commodity/level,
+# efficiency (conveyance/transmission loss), and cost structure.
+#
+# This mirrors the legacy R+GAMS indus_ix model's per-arc technologies
+# (river|, conv_canal|, lined_canal|, trs_|  in basin_msggdx_technologies.r),
+# but as a single generic, data-driven generator instead of one hand-written
+# R code block per link type.
+
+link_types:
+  river:
+    description: >-
+      Natural downstream river-routed water transfer between adjacent basins
+      (no engineered infrastructure, no pumping). Equivalent to the R model's
+      river| arcs.
+    commodity: surfacewater_basin
+    level: water_avail_basin
+    conveyance_efficiency: 1.0
+    electricity_input: false
+    electricity_intensity_gwa_per_mcm: 0.0
+    technical_lifetime_years: 100
+    construction_time_years: 1
+    investment_usd_per_mcm_km: 0.0
+    fix_cost_usd_per_mcm: 0.0
+    var_cost_usd_per_mcm: 0.0
+
+  canal_conv:
+    description: >-
+      Unlined/conventional engineered canal transfer. 25% conveyance loss
+      (Wu et al., World Bank 2013), requires pumping electricity.
+    commodity: surfacewater_basin
+    level: water_avail_basin
+    conveyance_efficiency: 0.75
+    electricity_input: true
+    electricity_intensity_gwa_per_mcm: 0.0033
+    technical_lifetime_years: 50
+    construction_time_years: 2
+    investment_usd_per_mcm_km: 5000.0
+    fix_cost_usd_per_mcm: 50.0
+    var_cost_usd_per_mcm: 5.0
+
+  canal_lined:
+    description: >-
+      Lined/efficient engineered canal transfer. 10% conveyance loss.
+    commodity: surfacewater_basin
+    level: water_avail_basin
+    conveyance_efficiency: 0.90
+    electricity_input: true
+    electricity_intensity_gwa_per_mcm: 0.0033
+    technical_lifetime_years: 50
+    construction_time_years: 2
+    investment_usd_per_mcm_km: 8000.0
+    fix_cost_usd_per_mcm: 60.0
+    var_cost_usd_per_mcm: 5.0
+
+  interbasin_canal:
+    description: >-
+      Transfer that leaves the modeled system entirely (e.g. a canal to a
+      neighbouring basin delineation outside this model's scope). Has an
+      input but no output -- water is consumed/removed from the model.
+    commodity: surfacewater_basin
+    level: water_avail_basin
+    conveyance_efficiency: 0.0
+    electricity_input: true
+    electricity_intensity_gwa_per_mcm: 0.0033
+    technical_lifetime_years: 50
+    construction_time_years: 2
+    investment_usd_per_mcm_km: 5000.0
+    fix_cost_usd_per_mcm: 50.0
+    var_cost_usd_per_mcm: 5.0
+
+  transmission:
+    description: >-
+      Basin-to-basin (or region-to-basin) electricity transmission line.
+      Structurally wired now; will carry no meaningful flow until a
+      basin-located electricity generation technology (e.g. a future
+      hydro_canal/hydro_river port) exists to supply it -- see the
+      indus_ix gap analysis. Kept enabled so the technology/set plumbing
+      and tests exist ahead of that follow-up.
+    commodity: electr
+    level: final
+    # Line loss is distance-scaled, not flat -- matches the R model's
+    # trs_eff.df (~0.006%/km). conveyance_efficiency below is a fallback
+    # only used if distance_km is somehow unavailable; add_network_techs()
+    # computes the real value as 1 - transmission_loss_per_km * distance_km.
+    conveyance_efficiency: 0.98
+    transmission_loss_per_km: 0.00006
+    electricity_input: false
+    electricity_intensity_gwa_per_mcm: 0.0
+    technical_lifetime_years: 40
+    construction_time_years: 2
+    investment_usd_per_mw_km: 1310.0
+    fix_cost_usd_per_mw: 1000.0
+    var_cost_usd_per_mw: 0.0
+
+# Master toggles -- set to false to skip generating that link_type entirely,
+# without editing basin_links_<regions>.csv.
+enabled_link_types:
+  river: true
+  canal_conv: true
+  canal_lined: true
+  interbasin_canal: true
+  transmission: true
+
+# Fallback used only if a basin_links row has a blank distance_km (the
+# placeholder data always fills this in, but future real GIS-derived data
+# rows should too -- this exists so a missing value degrades to a
+# conservative default rather than crashing the build).
+default_distance_km: 100.0
+
+# Capacity factor applied to all network technologies (matches
+# ANNUAL_CAPACITY_FACTOR-style constants used elsewhere in the water module:
+# a technology sized for X MCM/year or X MW is assumed available year-round).
+capacity_factor: 1.0
